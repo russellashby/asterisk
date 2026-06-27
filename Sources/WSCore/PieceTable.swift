@@ -66,6 +66,20 @@ final class PieceTable {
 
     func text() -> String { String(slice(0..<count)) }
 
+    // MARK: - Snapshots (for undo/redo)
+    //
+    // The piece list + count fully describe the document. The `add` buffer is
+    // append-only, so old piece indices stay valid forever — restoring an older
+    // piece list is enough to roll back, no buffer rewinding needed. Array COW
+    // keeps snapshots cheap and isolated from later in-place edits.
+
+    func snapshot() -> (pieces: [Piece], count: Int) { (pieces, count) }
+
+    func restore(pieces: [Piece], count: Int) {
+        self.pieces = pieces
+        self.count = count
+    }
+
     // MARK: - Writing
 
     func insert(_ chars: [Character], at offset: Int) {

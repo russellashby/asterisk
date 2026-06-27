@@ -14,6 +14,10 @@ line, ruler, blinking block cursor.
 **Phase 2 (done):** piece-table edit buffer, incremental word-wrap layout, full
 cursor motion, insert/overtype. AppKit-free core (`WSCore`) with unit tests.
 
+**Phase 3 (done):** `^K`/`^Q` prefix command system, block ops (mark/copy/move/
+delete with on-screen highlight), find & find/replace, multi-level undo/redo.
+Native Edit menu mirrors the commands.
+
 ### Try it
 
 ```sh
@@ -36,13 +40,17 @@ open WordStar.app
 | Word left / right | `^A` / `^F` |
 | Page up / down | `^R` / `^C` · PgUp/PgDn |
 | Line start / end | Home / End |
-| Delete char under cursor | `^G` |
+| Delete char under cursor / word / line | `^G` / `^T` / `^Y` |
 | Insert / overtype toggle | `^V` |
+| Undo · find next | `^U` · `^L` |
+| **Block** (`^K`) begin/end · copy · move · delete · hide | `^KB`/`^KK` · `^KC` · `^KV` · `^KY` · `^KH` |
+| **Quick** (`^Q`) line start/end · doc top/bottom | `^QS`/`^QD` · `^QR`/`^QC` |
+| **Quick** find · replace · to block · del-to-eol | `^QF` · `^QA` · `^QB`/`^QK` · `^QY` |
+| Native menu: Undo/Redo/Find/Replace | `⌘Z` `⌘⇧Z` `⌘F` `⌘G` `⌘R` |
 | Quit | `⌘Q` |
 
 ## Roadmap
 
-3. WordStar command FSM, `^K`/`^Q` menus, blocks, find/replace, undo/redo.
 4. On-screen formatting: dot commands, margins, bold/underline/italic, reformat, help levels.
 5. Native-format file I/O, `.BAK` backups, palettes, native menu mirroring.
 

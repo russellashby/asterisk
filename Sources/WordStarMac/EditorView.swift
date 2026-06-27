@@ -10,7 +10,7 @@ final class EditorView: NSView {
     private let theme = Theme.classic
     private let textColumns = 80
     private let statusRow = 0
-    private let rulerRow  = 1
+    private let infoRow   = 1     // ruler, or prompt / message when active
     private let firstTextRow = 2
 
     // MARK: Font metrics
@@ -23,6 +23,15 @@ final class EditorView: NSView {
     private let doc = Document(wrapWidth: 65)
     private var scrollTop = 0
     private var fileName = "UNTITLED.WS"
+
+    // MARK: Command FSM / prompt
+    private enum InputState { case normal, awaitBlock, awaitQuick }
+    private enum Prompt { case find, replaceSearch, replaceWith(String) }
+    private var inputState: InputState = .normal
+    private var prompt: Prompt?
+    private var promptBuffer = ""
+    private var message: String?
+    private var promptCaretCol = 0
 
     // MARK: Geometry (recomputed on resize)
     private var originX: CGFloat = 0
@@ -60,17 +69,11 @@ final class EditorView: NSView {
     // MARK: - Responder / focus
 
     override var acceptsFirstResponder: Bool { true }
-    override var isFlipped: Bool { true }   // row 0 at the top
+    override var isFlipped: Bool { true }
 
-    override func becomeFirstResponder() -> Bool {
-        startBlink()
-        return true
-    }
-
+    override func becomeFirstResponder() -> Bool { startBlink(); return true }
     override func resignFirstResponder() -> Bool {
-        blinkTimer?.invalidate()
-        cursorOn = true
-        return true
+        blinkTimer?.invalidate(); cursorOn = true; return true
     }
 
     // MARK: - Geometry
@@ -79,9 +82,7 @@ final class EditorView: NSView {
         let availW = bounds.width
         let availH = bounds.height
         let rows = max(firstTextRow + 1, Int(floor(availH / cellH)))
-        if rows != grid.rows {
-            grid.resize(cols: textColumns, rows: rows)
-        }
+        if rows != grid.rows { grid.resize(cols: textColumns, rows: rows) }
         let gridW = cellW * CGFloat(textColumns)
         let gridH = CGFloat(rows) * cellH
         originX = floor((availW - gridW) / 2)
@@ -117,26 +118,53 @@ final class EditorView: NSView {
 
     private func setCell(_ r: Int, _ c: Int, _ cell: Cell) {
         guard r >= 0, c >= 0, r < grid.rows, c < grid.cols else { return }
-        if grid.set(r, c, cell) {
-            setNeedsDisplay(cellRect(r, c))
-        }
+        if grid.set(r, c, cell) { setNeedsDisplay(cellRect(r, c)) }
     }
 
     private func renderGrid() {
         clampScroll()
         renderStatusLine()
-        renderRuler()
+        renderInfoRow()
         renderText()
     }
 
     private func renderStatusLine() {
-        let pos = "PAGE 1  LINE \(doc.cursorLine + 1)  COL \(doc.cursorColumn + 1)"
-        let mode = doc.insertMode ? "INSERT ON" : "INSERT OFF"
-        let text = "  \(fileName)    \(pos)    \(mode)"
+        let pos = "L\(doc.cursorLine + 1) C\(doc.cursorColumn + 1)"
+        let mode = doc.insertMode ? "INSERT" : "OVERTYPE"
+        let blk = doc.blockRange != nil ? "  BLOCK" : ""
+        let text = "  \(fileName)    \(pos)    \(mode)\(blk)"
         let chars = Array(text)
         for c in 0..<grid.cols {
             let ch: Character = c < chars.count ? chars[c] : " "
             setCell(statusRow, c, Cell(ch: ch, role: .status))
+        }
+    }
+
+    private func renderInfoRow() {
+        if let p = prompt {
+            let label: String
+            switch p {
+            case .find:          label = "Find: "
+            case .replaceSearch: label = "Replace — find: "
+            case .replaceWith:   label = "Replace with: "
+            }
+            let text = label + promptBuffer
+            promptCaretCol = min(text.count, grid.cols - 1)
+            writeInfo(text, role: .status)
+            return
+        }
+        if let m = message {
+            writeInfo(m, role: .status)
+            return
+        }
+        renderRuler()
+    }
+
+    private func writeInfo(_ text: String, role: CellRole) {
+        let chars = Array(text)
+        for c in 0..<grid.cols {
+            let ch: Character = c < chars.count ? chars[c] : " "
+            setCell(infoRow, c, Cell(ch: ch, role: role))
         }
     }
 
@@ -146,18 +174,26 @@ final class EditorView: NSView {
             if c == 0 { ch = "L" }
             else if c == 64 { ch = "R" }
             else if c % 5 == 0 { ch = "!" }
-            setCell(rulerRow, c, Cell(ch: ch, role: .ruler))
+            setCell(infoRow, c, Cell(ch: ch, role: .ruler))
         }
     }
 
     private func renderText() {
+        let block = doc.blockHidden ? nil : doc.blockRange
         for vl in 0..<textRows {
             let gridRow = firstTextRow + vl
             let lineIndex = scrollTop + vl
-            let line: [Character] = (lineIndex < doc.lineCount) ? doc.lineText(lineIndex) : []
+            let hasLine = lineIndex < doc.lineCount
+            let line: [Character] = hasLine ? doc.lineText(lineIndex) : []
+            let lineStart = hasLine ? doc.lineStartOffset(lineIndex) : 0
             for c in 0..<grid.cols {
                 let ch: Character = c < line.count ? line[c] : " "
-                setCell(gridRow, c, Cell(ch: ch, role: .text))
+                var cell = Cell(ch: ch, role: .text)
+                if let b = block, c < line.count {
+                    let off = lineStart + c
+                    if off >= b.lowerBound && off < b.upperBound { cell.inverse = true }
+                }
+                setCell(gridRow, c, cell)
             }
         }
     }
@@ -166,8 +202,13 @@ final class EditorView: NSView {
 
     private func updateCursorPosition(invalidateOld: Bool) {
         let oldR = gridCursorRow, oldC = gridCursorCol
-        gridCursorRow = firstTextRow + (doc.cursorLine - scrollTop)
-        gridCursorCol = min(doc.cursorColumn, grid.cols - 1)
+        if prompt != nil {
+            gridCursorRow = infoRow
+            gridCursorCol = promptCaretCol
+        } else {
+            gridCursorRow = firstTextRow + (doc.cursorLine - scrollTop)
+            gridCursorCol = min(doc.cursorColumn, grid.cols - 1)
+        }
         cursorOn = true
         restartBlink()
         if invalidateOld { setNeedsDisplay(cellRect(oldR, oldC)) }
@@ -183,9 +224,7 @@ final class EditorView: NSView {
         }
     }
 
-    private func restartBlink() {
-        if blinkTimer != nil { startBlink() }
-    }
+    private func restartBlink() { if blinkTimer != nil { startBlink() } }
 
     // MARK: - Drawing
 
@@ -200,9 +239,7 @@ final class EditorView: NSView {
         guard cMin <= cMax, rMin <= rMax else { return }
 
         for r in rMin...rMax {
-            for c in cMin...cMax {
-                drawCell(r, c)
-            }
+            for c in cMin...cMax { drawCell(r, c) }
         }
     }
 
@@ -211,10 +248,7 @@ final class EditorView: NSView {
         var (fg, bg) = colors(for: cell)
 
         let isCursor = cursorOn && r == gridCursorRow && c == gridCursorCol
-        if isCursor {
-            bg = theme.cursor
-            fg = theme.textBG
-        }
+        if isCursor { bg = theme.cursor; fg = theme.textBG }
 
         let rect = cellRect(r, c)
         bg.setFill()
@@ -223,8 +257,8 @@ final class EditorView: NSView {
         if cell.ch != " " {
             var attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: fg]
             if cell.underline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
-            let s = String(cell.ch) as NSString
-            s.draw(at: CGPoint(x: rect.minX, y: rect.minY), withAttributes: attrs)
+            (String(cell.ch) as NSString).draw(at: CGPoint(x: rect.minX, y: rect.minY),
+                                               withAttributes: attrs)
         }
     }
 
@@ -243,66 +277,166 @@ final class EditorView: NSView {
     // MARK: - Input
 
     override func keyDown(with event: NSEvent) {
-        let flags = event.modifierFlags
-        if flags.contains(.command) {
-            super.keyDown(with: event)   // let the main menu handle Cmd-shortcuts
+        // Prompt mode captures all non-Command keys.
+        if prompt != nil {
+            if event.modifierFlags.contains(.command) { super.keyDown(with: event) }
+            else { handlePrompt(event) }
             return
         }
 
-        if flags.contains(.control) {
-            handleControl(event)
-            return
+        let flags = event.modifierFlags
+        if flags.contains(.command) { super.keyDown(with: event); return }
+
+        // Awaiting a key after a ^K / ^Q prefix.
+        switch inputState {
+        case .awaitBlock: completePrefix(event, resolveBlockCommand); return
+        case .awaitQuick: completePrefix(event, resolveQuickCommand); return
+        case .normal: break
         }
+
+        if message != nil { message = nil }
+
+        if flags.contains(.control) { handleControl(event); return }
 
         switch event.keyCode {
-        case 36, 76:  doc.insertNewline()        // Return / Enter
-        case 51:      doc.backspace()            // Delete (backspace)
-        case 117:     doc.deleteForward()        // Forward delete
+        case 36, 76:  doc.insertNewline()
+        case 51:      doc.backspace()
+        case 117:     doc.deleteForward()
         case 123:     doc.moveLeft()
         case 124:     doc.moveRight()
         case 125:     doc.moveDown()
         case 126:     doc.moveUp()
-        case 115:     doc.lineStart()            // Home
-        case 119:     doc.lineEnd()              // End
-        case 116:     doc.pageUp(rows: textRows) // Page Up
-        case 121:     doc.pageDown(rows: textRows) // Page Down
+        case 115:     doc.lineStart()
+        case 119:     doc.lineEnd()
+        case 116:     doc.pageUp(rows: textRows)
+        case 121:     doc.pageDown(rows: textRows)
         default:      insertPrintable(event)
         }
         refresh()
     }
 
-    /// WordStar control-key commands available without a prefix menu.
-    /// (The ^K / ^Q prefix command system arrives in Phase 3.)
     private func handleControl(_ event: NSEvent) {
         switch event.charactersIgnoringModifiers?.lowercased() {
-        case "e": doc.moveUp()                   // diamond up
-        case "x": doc.moveDown()                 // diamond down
-        case "s": doc.moveLeft()                 // diamond left
-        case "d": doc.moveRight()                // diamond right
-        case "a": doc.wordLeft()                 // word left
-        case "f": doc.wordRight()                // word right
-        case "r": doc.pageUp(rows: textRows)     // page up
-        case "c": doc.pageDown(rows: textRows)   // page down
-        case "g": doc.deleteForward()            // delete char under cursor
-        case "v": doc.toggleInsertMode()         // insert/overtype
-        case "h": doc.backspace()                // ^H backspace
+        case "k": inputState = .awaitBlock; message = "^K  B/K mark  C copy  V move  Y delete  H hide"
+        case "q": inputState = .awaitQuick; message = "^Q  S/D line  R/C doc  B/K block  F find  A replace  Y del-eol"
+        case "e": doc.moveUp()
+        case "x": doc.moveDown()
+        case "s": doc.moveLeft()
+        case "d": doc.moveRight()
+        case "a": doc.wordLeft()
+        case "f": doc.wordRight()
+        case "r": doc.pageUp(rows: textRows)
+        case "c": doc.pageDown(rows: textRows)
+        case "g": doc.deleteForward()
+        case "h": doc.backspace()
+        case "t": doc.deleteWordRight()
+        case "y": doc.deleteLine()
+        case "v": doc.toggleInsertMode()
+        case "u": doc.undo()
+        case "l": runFindNext()
         default: break
         }
         refresh()
+    }
+
+    private func completePrefix(_ event: NSEvent, _ resolver: (Character) -> EditorCommand?) {
+        inputState = .normal
+        message = nil
+        if event.keyCode == 53 { refresh(); return }   // Esc cancels
+        guard let ch = event.charactersIgnoringModifiers?.first,
+              let cmd = resolver(ch) else { refresh(); return }
+        execute(cmd)
+        refresh()
+    }
+
+    private func execute(_ cmd: EditorCommand) {
+        switch cmd {
+        case .markBlockBegin: doc.markBlockBegin()
+        case .markBlockEnd:   doc.markBlockEnd()
+        case .copyBlock:      doc.copyBlockAtCursor()
+        case .moveBlock:      doc.moveBlock()
+        case .deleteBlock:    doc.deleteBlock()
+        case .hideBlock:      doc.toggleBlockHidden()
+        case .toBlockBegin:   doc.toBlockBegin()
+        case .toBlockEnd:     doc.toBlockEnd()
+        case .lineStart:      doc.lineStart()
+        case .lineEnd:        doc.lineEnd()
+        case .docStart:       doc.documentStart()
+        case .docEnd:         doc.documentEnd()
+        case .deleteToLineEnd: doc.deleteToLineEnd()
+        case .find:           startPrompt(.find)
+        case .findReplace:    startPrompt(.replaceSearch)
+        }
     }
 
     private func insertPrintable(_ event: NSEvent) {
         guard let chars = event.characters else { return }
         for ch in chars {
             guard let scalar = ch.unicodeScalars.first else { continue }
-            if scalar.value >= 0x20 && scalar.value != 0x7f {
-                doc.insertChar(ch)
+            if scalar.value >= 0x20 && scalar.value != 0x7f { doc.insertChar(ch) }
+        }
+    }
+
+    // MARK: - Find / replace prompt
+
+    private func startPrompt(_ kind: Prompt) {
+        prompt = kind
+        promptBuffer = ""
+        message = nil
+        refresh()
+    }
+
+    private func handlePrompt(_ event: NSEvent) {
+        switch event.keyCode {
+        case 53:        prompt = nil; message = nil                 // Esc
+        case 36, 76:    confirmPrompt(); return                    // Return
+        case 51:        if !promptBuffer.isEmpty { promptBuffer.removeLast() }
+        default:
+            if let chars = event.characters {
+                for ch in chars {
+                    if let s = ch.unicodeScalars.first, s.value >= 0x20, s.value != 0x7f {
+                        promptBuffer.append(ch)
+                    }
+                }
             }
         }
+        refresh()
+    }
+
+    private func confirmPrompt() {
+        guard let p = prompt else { return }
+        let entry = promptBuffer
+        switch p {
+        case .find:
+            prompt = nil
+            message = doc.find(Array(entry)) ? nil : "Not found: \(entry)"
+        case .replaceSearch:
+            prompt = .replaceWith(entry)
+            promptBuffer = ""
+            refresh()
+            return
+        case .replaceWith(let needle):
+            prompt = nil
+            let n = doc.replaceAll(Array(needle), with: Array(entry))
+            message = "\(n) replacement\(n == 1 ? "" : "s")"
+        }
+        refresh()
+    }
+
+    private func runFindNext() {
+        if !doc.findNext() { message = "Not found" }
     }
 
     private func refresh() {
         renderGrid()
         updateCursorPosition(invalidateOld: true)
     }
+
+    // MARK: - Menu actions (mirror WordStar commands with native keys)
+
+    @objc func wsUndo(_ sender: Any?)     { doc.undo(); refresh() }
+    @objc func wsRedo(_ sender: Any?)     { doc.redo(); refresh() }
+    @objc func wsFind(_ sender: Any?)     { startPrompt(.find) }
+    @objc func wsFindNext(_ sender: Any?) { runFindNext(); refresh() }
+    @objc func wsReplace(_ sender: Any?)  { startPrompt(.replaceSearch) }
 }

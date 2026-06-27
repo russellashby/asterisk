@@ -18,6 +18,8 @@ print("PieceTable tests…")
 runPieceTableTests()
 print("Document tests…")
 runDocumentTests()
+print("Command / block / find / undo tests…")
+runCommandTests()
 
 if failures == 0 {
     print("\nAll tests passed ✓")

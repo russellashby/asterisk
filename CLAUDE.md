@@ -40,8 +40,9 @@ target `WSCoreTests` is an XCTest-free test runner (CLT has no XCTest).
 
 | File                              | Responsibility                              |
 |-----------------------------------|---------------------------------------------|
-| `Sources/WSCore/PieceTable.swift` | Piece-table edit buffer (insert/delete/slice) |
-| `Sources/WSCore/Document.swift`   | Cursor, editing, word-wrap layout (incremental relayout) |
+| `Sources/WSCore/PieceTable.swift` | Piece-table edit buffer (insert/delete/slice/snapshot) |
+| `Sources/WSCore/Document.swift`   | Cursor, editing, word-wrap layout, blocks, find/replace, undo |
+| `Sources/WSCore/Commands.swift`   | `EditorCommand` + ^K/^Q key→command resolution |
 | `Sources/WordStarMac/main.swift`  | NSApplication entry point                    |
 | `Sources/WordStarMac/AppDelegate.swift` | Window + native menu setup            |
 | `Sources/WordStarMac/EditorView.swift`  | Input, geometry, render-to-grid, drawing |
@@ -72,7 +73,9 @@ with `-enable-testing` so the runner can `@testable import` internals.
    cursor diamond teaser. Phase 1 existed to de-risk latency; confirmed responsive.
 2. **DONE** — Piece-table buffer, incremental word-wrap layout, full cursor
    motion (diamond, word, line, page, doc), insert/overtype. Unit tested.
-3. WordStar command FSM, `^K`/`^Q` menus, blocks, find/replace, undo/redo.
+3. **DONE** — Command FSM (`^K`/`^Q` prefixes), block ops (mark/copy/move/
+   delete/hide with highlight), find & find/replace (prompt input), undo/redo
+   (snapshot-based, typing coalesced). Native Edit menu mirrors commands. Tested.
 4. On-screen formatting: dot commands, margins, bold/underline/italic, reformat,
    help levels (0–3).
 5. Native-format file I/O, authentic `.BAK` backups, palettes, native menu mirroring.

@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupMenu() {
         let mainMenu = NSMenu()
 
+        // Application menu
         let appItem = NSMenuItem()
         mainMenu.addItem(appItem)
         let appMenu = NSMenu()
@@ -40,6 +41,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         keyEquivalent: "q")
         appItem.submenu = appMenu
 
+        // Edit menu — native keys mirroring WordStar commands (WS keys shown).
+        let editItem = NSMenuItem()
+        mainMenu.addItem(editItem)
+        let editMenu = NSMenu(title: "Edit")
+        addItem(editMenu, "Undo  (^U)", #selector(EditorView.wsUndo(_:)), "z")
+        addItem(editMenu, "Redo", #selector(EditorView.wsRedo(_:)), "Z")
+        editMenu.addItem(.separator())
+        addItem(editMenu, "Find…  (^QF)", #selector(EditorView.wsFind(_:)), "f")
+        addItem(editMenu, "Find Next  (^L)", #selector(EditorView.wsFindNext(_:)), "g")
+        addItem(editMenu, "Replace…  (^QA)", #selector(EditorView.wsReplace(_:)), "r")
+        editItem.submenu = editMenu
+
         NSApp.mainMenu = mainMenu
+    }
+
+    /// Add a first-responder-targeted menu item (target nil walks the responder
+    /// chain to the focused EditorView).
+    private func addItem(_ menu: NSMenu, _ title: String, _ action: Selector, _ key: String) {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.target = nil
+        menu.addItem(item)
     }
 }

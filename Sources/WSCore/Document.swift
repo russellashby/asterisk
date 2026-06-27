@@ -8,10 +8,10 @@ struct VisualLine: Equatable {
     var end: Int
 }
 
-/// The editable document: a piece-table buffer plus a word-wrap layout cache and
-/// a cursor. The cursor is a single linear offset; visual (line, column) is
-/// derived from the layout. Word-wrap is computed at layout time (the buffer
-/// stores only hard newlines), so margin changes and reformatting are cheap.
+/// The editable document: a piece-table buffer plus a word-wrap layout cache, a
+/// cursor, block marks, search state and undo/redo. The cursor is a single
+/// linear offset; visual (line, column) is derived from the layout. Word-wrap is
+/// computed at layout time (the buffer stores only hard newlines).
 ///
 /// AppKit-free and unit tested; the view layer talks to this.
 public final class Document {
@@ -26,6 +26,28 @@ public final class Document {
 
     private(set) public var cursor = 0      // offset 0...count
     private var preferredColumn = 0
+
+    // Block marks (document offsets) and highlight visibility.
+    public private(set) var blockBegin: Int?
+    public private(set) var blockEnd: Int?
+    public private(set) var blockHidden = false
+
+    // Search state for "find next".
+    private var lastSearch: [Character]?
+    private var lastCaseInsensitive = true
+
+    // Undo/redo as document-state snapshots, with typing coalesced into one run.
+    private struct DocState {
+        var pieces: [PieceTable.Piece]
+        var count: Int
+        var cursor: Int
+        var blockBegin: Int?
+        var blockEnd: Int?
+    }
+    private var undoStack: [DocState] = []
+    private var redoStack: [DocState] = []
+    private var typingRun = false
+    private let undoLimit = 400
 
     public init(text: String = "", wrapWidth: Int = 65) {
         self.pt = PieceTable(text: text)
@@ -58,7 +80,17 @@ public final class Document {
         return pt.slice(l.start..<l.end)
     }
 
+    /// Document offset of the first character of a visual line (for highlight).
+    public func lineStartOffset(_ index: Int) -> Int { lines[index].start }
+
+    public var blockRange: Range<Int>? {
+        guard let b = blockBegin, let e = blockEnd else { return nil }
+        let lo = min(b, e), hi = max(b, e)
+        return lo < hi ? lo..<hi : nil
+    }
+
     private func syncPreferredColumn() { preferredColumn = cursorColumn }
+    private func endTyping() { typingRun = false }
 
     private func clampToLine(_ li: Int, _ col: Int) -> Int {
         let line = lines[li]
@@ -66,69 +98,133 @@ public final class Document {
         return line.start + min(col, contentLen)
     }
 
+    private func isWhitespace(_ ch: Character) -> Bool {
+        ch == " " || ch == "\n" || ch == "\t"
+    }
+
+    // MARK: - Low-level edit primitives (buffer + layout + mark tracking)
+
+    private func rawInsert(_ chars: [Character], at offset: Int) {
+        pt.insert(chars, at: offset)
+        relayout(editStart: offset, delta: chars.count)
+        if let b = blockBegin, b > offset { blockBegin = b + chars.count }
+        if let e = blockEnd, e > offset { blockEnd = e + chars.count }
+    }
+
+    private func rawDelete(_ range: Range<Int>) {
+        pt.delete(range)
+        relayout(editStart: range.lowerBound, delta: -range.count)
+        blockBegin = shiftForDelete(blockBegin, range)
+        blockEnd = shiftForDelete(blockEnd, range)
+    }
+
+    private func shiftForDelete(_ mark: Int?, _ range: Range<Int>) -> Int? {
+        guard let m = mark else { return nil }
+        if m <= range.lowerBound { return m }
+        if m >= range.upperBound { return m - range.count }
+        return range.lowerBound
+    }
+
     // MARK: - Editing
 
     public func insertChar(_ ch: Character) {
+        if !typingRun { pushUndo(); typingRun = true }
         if !insertMode, cursor < count, pt.char(at: cursor) != "\n" {
-            pt.delete(cursor..<(cursor + 1))
-            pt.insert([ch], at: cursor)
-            relayout(editStart: cursor, delta: 0)
+            rawDelete(cursor..<(cursor + 1))
+            rawInsert([ch], at: cursor)
         } else {
-            pt.insert([ch], at: cursor)
-            relayout(editStart: cursor, delta: 1)
+            rawInsert([ch], at: cursor)
         }
         cursor += 1
         syncPreferredColumn()
     }
 
     public func insertNewline() {
-        pt.insert(["\n"], at: cursor)
-        relayout(editStart: cursor, delta: 1)
+        endTyping(); pushUndo()
+        rawInsert(["\n"], at: cursor)
         cursor += 1
         syncPreferredColumn()
     }
 
     public func backspace() {
         guard cursor > 0 else { return }
-        pt.delete((cursor - 1)..<cursor)
+        endTyping(); pushUndo()
+        rawDelete((cursor - 1)..<cursor)
         cursor -= 1
-        relayout(editStart: cursor, delta: -1)
         syncPreferredColumn()
     }
 
     public func deleteForward() {
         guard cursor < count else { return }
-        pt.delete(cursor..<(cursor + 1))
-        relayout(editStart: cursor, delta: -1)
+        endTyping(); pushUndo()
+        rawDelete(cursor..<(cursor + 1))
         syncPreferredColumn()
     }
 
-    public func toggleInsertMode() { insertMode.toggle() }
+    public func toggleInsertMode() { endTyping(); insertMode.toggle() }
+
+    /// ^QY — delete from the cursor to the end of the logical line.
+    public func deleteToLineEnd() {
+        endTyping()
+        var e = cursor
+        while e < count, pt.char(at: e) != "\n" { e += 1 }
+        guard e > cursor else { return }
+        pushUndo()
+        rawDelete(cursor..<e)
+        syncPreferredColumn()
+    }
+
+    /// ^Y — delete the whole current visual line (content + its line break).
+    public func deleteLine() {
+        endTyping()
+        let li = cursorLine
+        let start = lines[li].start
+        let end = (li + 1 < lines.count) ? lines[li + 1].start : count
+        guard end > start else { return }
+        pushUndo()
+        rawDelete(start..<end)
+        cursor = min(start, count)
+        syncPreferredColumn()
+    }
+
+    /// ^T — delete the word to the right of the cursor.
+    public func deleteWordRight() {
+        endTyping()
+        let target = wordRightOffset(from: cursor)
+        guard target > cursor else { return }
+        pushUndo()
+        rawDelete(cursor..<target)
+        syncPreferredColumn()
+    }
 
     // MARK: - Cursor motion
 
-    public func moveLeft()  { if cursor > 0 { cursor -= 1 }; syncPreferredColumn() }
-    public func moveRight() { if cursor < count { cursor += 1 }; syncPreferredColumn() }
+    public func moveLeft()  { endTyping(); if cursor > 0 { cursor -= 1 }; syncPreferredColumn() }
+    public func moveRight() { endTyping(); if cursor < count { cursor += 1 }; syncPreferredColumn() }
 
     public func moveUp() {
+        endTyping()
         let li = cursorLine
         if li > 0 { cursor = clampToLine(li - 1, preferredColumn) }
     }
 
     public func moveDown() {
+        endTyping()
         let li = cursorLine
         if li < lines.count - 1 { cursor = clampToLine(li + 1, preferredColumn) }
     }
 
-    public func wordRight() {
-        var o = cursor
+    private func wordRightOffset(from offset: Int) -> Int {
+        var o = offset
         while o < count, !isWhitespace(pt.char(at: o)) { o += 1 }
         while o < count, isWhitespace(pt.char(at: o)) { o += 1 }
-        cursor = o
-        syncPreferredColumn()
+        return o
     }
 
+    public func wordRight() { endTyping(); cursor = wordRightOffset(from: cursor); syncPreferredColumn() }
+
     public func wordLeft() {
+        endTyping()
         var o = cursor
         while o > 0, isWhitespace(pt.char(at: o - 1)) { o -= 1 }
         while o > 0, !isWhitespace(pt.char(at: o - 1)) { o -= 1 }
@@ -136,24 +232,183 @@ public final class Document {
         syncPreferredColumn()
     }
 
-    public func lineStart() { cursor = lines[cursorLine].start; syncPreferredColumn() }
-    public func lineEnd()   { cursor = lines[cursorLine].end;   syncPreferredColumn() }
+    public func lineStart() { endTyping(); cursor = lines[cursorLine].start; syncPreferredColumn() }
+    public func lineEnd()   { endTyping(); cursor = lines[cursorLine].end;   syncPreferredColumn() }
 
     public func pageUp(rows: Int) {
-        let target = max(0, cursorLine - max(1, rows))
-        cursor = clampToLine(target, preferredColumn)
+        endTyping()
+        cursor = clampToLine(max(0, cursorLine - max(1, rows)), preferredColumn)
     }
 
     public func pageDown(rows: Int) {
-        let target = min(lines.count - 1, cursorLine + max(1, rows))
-        cursor = clampToLine(target, preferredColumn)
+        endTyping()
+        cursor = clampToLine(min(lines.count - 1, cursorLine + max(1, rows)), preferredColumn)
     }
 
-    public func documentStart() { cursor = 0; syncPreferredColumn() }
-    public func documentEnd()   { cursor = count; syncPreferredColumn() }
+    public func documentStart() { endTyping(); cursor = 0; syncPreferredColumn() }
+    public func documentEnd()   { endTyping(); cursor = count; syncPreferredColumn() }
 
-    private func isWhitespace(_ ch: Character) -> Bool {
-        ch == " " || ch == "\n" || ch == "\t"
+    // MARK: - Block operations (^K)
+
+    public func markBlockBegin() { endTyping(); blockBegin = cursor }
+    public func markBlockEnd()   { endTyping(); blockEnd = cursor }
+    public func toggleBlockHidden() { endTyping(); blockHidden.toggle() }
+    private func clearBlock() { blockBegin = nil; blockEnd = nil }
+
+    public func toBlockBegin() {
+        endTyping()
+        if let b = blockBegin { cursor = min(b, count); syncPreferredColumn() }
+    }
+
+    public func toBlockEnd() {
+        endTyping()
+        if let e = blockEnd { cursor = min(e, count); syncPreferredColumn() }
+    }
+
+    /// ^KC — copy the marked block to the cursor position.
+    public func copyBlockAtCursor() {
+        guard let r = blockRange else { return }
+        endTyping(); pushUndo()
+        let txt = pt.slice(r)
+        let at = cursor
+        rawInsert(txt, at: at)
+        cursor = min(at + txt.count, count)
+        clearBlock()
+        syncPreferredColumn()
+    }
+
+    /// ^KV — move the marked block to the cursor position.
+    public func moveBlock() {
+        guard let r = blockRange else { return }
+        endTyping(); pushUndo()
+        let txt = pt.slice(r)
+        var at = cursor
+        if at >= r.upperBound { at -= r.count }
+        else if at > r.lowerBound { at = r.lowerBound }   // cursor inside block
+        rawDelete(r)
+        rawInsert(txt, at: at)
+        cursor = at + txt.count
+        clearBlock()
+        syncPreferredColumn()
+    }
+
+    /// ^KY — delete the marked block.
+    public func deleteBlock() {
+        guard let r = blockRange else { return }
+        endTyping(); pushUndo()
+        rawDelete(r)
+        cursor = r.lowerBound
+        clearBlock()
+        syncPreferredColumn()
+    }
+
+    // MARK: - Find / replace
+
+    /// ^QF — find `needle` from the cursor (wrapping). Returns whether found.
+    @discardableResult
+    public func find(_ needle: [Character], caseInsensitive: Bool = true) -> Bool {
+        endTyping()
+        lastSearch = needle
+        lastCaseInsensitive = caseInsensitive
+        guard !needle.isEmpty else { return false }
+        let hay = pt.slice(0..<count)
+        if let r = Document.search(hay, needle, from: cursor, ci: caseInsensitive) {
+            cursor = r.upperBound; syncPreferredColumn(); return true
+        }
+        if let r = Document.search(hay, needle, from: 0, ci: caseInsensitive) {
+            cursor = r.upperBound; syncPreferredColumn(); return true
+        }
+        return false
+    }
+
+    /// ^L — repeat the last find from the cursor.
+    @discardableResult
+    public func findNext() -> Bool {
+        guard let n = lastSearch else { return false }
+        return find(n, caseInsensitive: lastCaseInsensitive)
+    }
+
+    /// ^QA — replace all occurrences of `needle` from the cursor to the end of
+    /// the document. Returns the number replaced (one undo step).
+    @discardableResult
+    public func replaceAll(_ needle: [Character], with replacement: [Character],
+                           caseInsensitive: Bool = true) -> Int {
+        endTyping()
+        guard !needle.isEmpty else { return 0 }
+        let hay = pt.slice(0..<count)
+        var matches: [Range<Int>] = []
+        var from = cursor
+        while let r = Document.search(hay, needle, from: from, ci: caseInsensitive) {
+            matches.append(r)
+            from = r.upperBound
+        }
+        guard !matches.isEmpty else { return 0 }
+        pushUndo()
+        for r in matches.reversed() {
+            rawDelete(r)
+            rawInsert(replacement, at: r.lowerBound)
+        }
+        cursor = min(cursor, count)
+        syncPreferredColumn()
+        return matches.count
+    }
+
+    static func search(_ hay: [Character], _ needle: [Character], from: Int, ci: Bool) -> Range<Int>? {
+        let n = hay.count, m = needle.count
+        if m == 0 || m > n { return nil }
+        let nd = ci ? needle.map(wsLower) : needle
+        var i = max(0, from)
+        while i + m <= n {
+            var k = 0
+            while k < m {
+                let hc = ci ? wsLower(hay[i + k]) : hay[i + k]
+                if hc != nd[k] { break }
+                k += 1
+            }
+            if k == m { return i..<(i + m) }
+            i += 1
+        }
+        return nil
+    }
+
+    // MARK: - Undo / redo
+
+    private func captureState() -> DocState {
+        let snap = pt.snapshot()
+        return DocState(pieces: snap.pieces, count: snap.count,
+                        cursor: cursor, blockBegin: blockBegin, blockEnd: blockEnd)
+    }
+
+    private func pushUndo() {
+        undoStack.append(captureState())
+        if undoStack.count > undoLimit { undoStack.removeFirst() }
+        redoStack.removeAll()
+    }
+
+    private func apply(_ s: DocState) {
+        pt.restore(pieces: s.pieces, count: s.count)
+        cursor = min(s.cursor, s.count)
+        blockBegin = s.blockBegin
+        blockEnd = s.blockEnd
+        forceFullRelayout()
+        syncPreferredColumn()
+    }
+
+    public var canUndo: Bool { !undoStack.isEmpty }
+    public var canRedo: Bool { !redoStack.isEmpty }
+
+    public func undo() {
+        endTyping()
+        guard let s = undoStack.popLast() else { return }
+        redoStack.append(captureState())
+        apply(s)
+    }
+
+    public func redo() {
+        endTyping()
+        guard let s = redoStack.popLast() else { return }
+        undoStack.append(captureState())
+        apply(s)
     }
 
     // MARK: - Layout (word wrap)
@@ -161,6 +416,7 @@ public final class Document {
     func forceFullRelayout() {
         lines = wrapParagraphs(0, count)
         if lines.isEmpty { lines = [VisualLine(start: 0, end: 0)] }
+        if cursor > count { cursor = count }
     }
 
     /// Greedy word wrap over `[a, b)`, splitting on '\n' (hard) and the right
@@ -172,7 +428,7 @@ public final class Document {
         let n = chars.count
 
         var curStart = a
-        var lastBreak = -1   // absolute offset just after a candidate space
+        var lastBreak = -1
         var idx = 0
         while idx < n {
             let ch = chars[idx]
@@ -192,11 +448,11 @@ public final class Document {
                     result.append(VisualLine(start: curStart, end: lastBreak))
                     curStart = lastBreak
                 } else {
-                    result.append(VisualLine(start: curStart, end: abs))   // hard-split long word
+                    result.append(VisualLine(start: curStart, end: abs))
                     curStart = abs
                 }
                 lastBreak = -1
-                continue   // re-evaluate this char against the new line
+                continue
             }
 
             if ch == " " { lastBreak = abs + 1 }
@@ -208,9 +464,8 @@ public final class Document {
     }
 
     /// Incremental relayout: re-wrap only the paragraph span touched by an edit
-    /// and shift the offsets of following lines by `delta`. Equivalent to a full
-    /// relayout (verified by tests) but bounded by paragraph size, not document
-    /// size.
+    /// and shift the offsets of following lines by `delta`. Verified equivalent
+    /// to a full relayout by tests, but bounded by paragraph size.
     private func relayout(editStart: Int, delta: Int) {
         let newCount = count
 
