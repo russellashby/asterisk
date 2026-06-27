@@ -7,7 +7,7 @@ import WSCore
 final class EditorView: NSView {
 
     // MARK: Configuration
-    private let theme = Theme.classic
+    private let theme = Theme.amber
     private let textColumns = 80
     private let statusRow = 0
     private let infoRow   = 1     // ruler, or prompt / message when active
