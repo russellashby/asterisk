@@ -4,7 +4,7 @@ import WSCore
 /// The editing canvas: a custom layer-backed NSView that owns every keystroke,
 /// renders an 80-column character grid letter-boxed into the window, and repaints
 /// only the cells that actually changed. This is the latency-critical surface.
-final class EditorView: NSView, NSWindowDelegate {
+final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
 
     // MARK: Configuration
     private let theme = Theme.amber
@@ -30,6 +30,10 @@ final class EditorView: NSView, NSWindowDelegate {
     private var filePath: URL?
     private var savedRevision = 0
     private var isDirty: Bool { doc.revision != savedRevision }
+
+    // MARK: CRT effects (toggleable; no screen curvature, kept subtle)
+    private var scanlinesOn = true
+    private var glowOn = true
 
     // MARK: Command FSM / prompt
     private enum InputState { case normal, awaitBlock, awaitQuick, awaitPrint }
@@ -310,6 +314,20 @@ final class EditorView: NSView, NSWindowDelegate {
         for r in rMin...rMax {
             for c in cMin...cMax { drawCell(r, c) }
         }
+
+        if scanlinesOn { drawScanlines(in: dirtyRect) }
+    }
+
+    /// Faint dark horizontal lines across the whole surface. Drawn in absolute
+    /// coordinates so the phase stays consistent as only dirty cells repaint.
+    private func drawScanlines(in dirtyRect: NSRect) {
+        let step: CGFloat = 3
+        NSColor(white: 0, alpha: 0.14).setFill()
+        var y = (dirtyRect.minY / step).rounded(.down) * step
+        while y < dirtyRect.maxY {
+            NSRect(x: dirtyRect.minX, y: y, width: dirtyRect.width, height: 1).fill()
+            y += step
+        }
     }
 
     private func drawCell(_ r: Int, _ c: Int) {
@@ -333,8 +351,21 @@ final class EditorView: NSView, NSWindowDelegate {
             }
             var attrs: [NSAttributedString.Key: Any] = [.font: glyphFont, .foregroundColor: fg]
             if cell.underline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
-            (String(cell.ch) as NSString).draw(at: CGPoint(x: rect.minX, y: rect.minY),
-                                               withAttributes: attrs)
+
+            if glowOn {
+                NSGraphicsContext.saveGraphicsState()
+                let glow = NSShadow()
+                glow.shadowColor = fg.withAlphaComponent(0.85)
+                glow.shadowBlurRadius = 3
+                glow.shadowOffset = .zero
+                glow.set()
+                (String(cell.ch) as NSString).draw(at: CGPoint(x: rect.minX, y: rect.minY),
+                                                   withAttributes: attrs)
+                NSGraphicsContext.restoreGraphicsState()
+            } else {
+                (String(cell.ch) as NSString).draw(at: CGPoint(x: rect.minX, y: rect.minY),
+                                                   withAttributes: attrs)
+            }
         }
     }
 
@@ -641,6 +672,18 @@ final class EditorView: NSView, NSWindowDelegate {
     }
 
     // MARK: - Menu actions (native keys mirroring WordStar commands)
+
+    @objc func wsToggleScanlines(_ sender: Any?) { scanlinesOn.toggle(); needsDisplay = true }
+    @objc func wsToggleGlow(_ sender: Any?)      { glowOn.toggle(); needsDisplay = true }
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(wsToggleScanlines(_:)): menuItem.state = scanlinesOn ? .on : .off
+        case #selector(wsToggleGlow(_:)):      menuItem.state = glowOn ? .on : .off
+        default: break
+        }
+        return true
+    }
 
     @objc func wsNew(_ sender: Any?)      { newDocument() }
     @objc func wsOpen(_ sender: Any?)     { openDocument() }

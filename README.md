@@ -26,6 +26,9 @@ levels 0–3 (`^J`), and amber/green/classic phosphor themes.
 lossless native format (text + control bytes + dot lines), `.BAK` backups,
 dirty-state title and unsaved-changes prompt on close.
 
+**CRT effects:** subtle scanlines + phosphor glow, both toggleable from the
+**View** menu (no screen curvature). Pairs nicely with the amber theme.
+
 ### Try it
 
 ```sh
@@ -65,7 +68,7 @@ open WordStar.app
 
 - **4b** — dynamic dot-command margins (`.lm`/`.rm`) and pagination (`.pa`/`.pl`).
 - System clipboard (`⌘C`/`⌘X`/`⌘V`).
-- CP437 bitmap font + CRT polish (glow/scanlines).
+- CP437 bitmap font (DOS glyphs). _(CRT glow/scanlines done — View menu.)_
 - Palette switching UI + fuller native menu mirroring.
 - Remaining commands: `^QE`/`^QX`, `^O` onscreen menu, `^P` print/PDF pipeline.
 

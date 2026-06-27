@@ -67,6 +67,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         addItem(editMenu, "Replace…  (^QA)", #selector(EditorView.wsReplace(_:)), "r")
         editItem.submenu = editMenu
 
+        // View menu — CRT effect toggles (checkmarks via validateMenuItem).
+        let viewItem = NSMenuItem()
+        mainMenu.addItem(viewItem)
+        let viewMenu = NSMenu(title: "View")
+        addItem(viewMenu, "CRT Scanlines", #selector(EditorView.wsToggleScanlines(_:)), "")
+        addItem(viewMenu, "CRT Phosphor Glow", #selector(EditorView.wsToggleGlow(_:)), "")
+        viewItem.submenu = viewMenu
+
         NSApp.mainMenu = mainMenu
     }
 
