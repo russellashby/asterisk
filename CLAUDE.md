@@ -88,6 +88,11 @@ with `-enable-testing` so the runner can `@testable import` internals.
    **Remaining backlog (see task list / below):** 4b margins+pagination, system
    clipboard, CP437 font + CRT polish, palette switching, ^O/^P/print pipeline.
 
+## Active plans
+
+- **Phase 4b (dot-command margins + pagination)** — detailed, implement-cold plan
+  in [`docs/PHASE_4B_PLAN.md`](docs/PHASE_4B_PLAN.md). Start there for that work.
+
 ## Conventions
 
 - Keep the hot path (keystroke → mutate → diff → draw) allocation-free; no global
