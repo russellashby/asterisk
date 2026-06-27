@@ -5,35 +5,43 @@ screen, WordStar control-key commands, built for blindly fast text input.
 
 Swift + AppKit, custom `NSView` cell-grid renderer (no Electron, no TextKit).
 
-## Phase 1 (current)
+## Status
 
-The latency-critical foundation:
+**Phase 1 (done):** latency-critical foundation — custom layer-backed `NSView`
+owning every keystroke, 80-column letter-boxed grid, per-cell diffing, status
+line, ruler, blinking block cursor.
 
-- Custom layer-backed `NSView` that owns every keystroke.
-- 80-column character grid, letter-boxed into a resizable window.
-- Per-cell back/front-buffer **diffing** — only changed cells repaint.
-- Authentic status line, ruler, block cursor with blink.
-- Live typing; cursor diamond teaser (`^E`/`^X`/`^S`/`^D`) + arrow keys,
-  Return, Backspace.
+**Phase 2 (done):** piece-table edit buffer, incremental word-wrap layout, full
+cursor motion, insert/overtype. AppKit-free core (`WSCore`) with unit tests.
 
 ### Try it
 
 ```sh
-swift run            # build + launch
+swift run WordStarMac    # build + launch
+swift run WSCoreTests    # run the core unit tests
 ```
 
 Or build a double-clickable app:
 
 ```sh
-./bundle.sh          # produces WordStar.app
+./bundle.sh              # produces WordStar.app
 open WordStar.app
 ```
 
-Type to insert. Move with arrows or `^E`/`^X`/`^S`/`^D`. `⌘Q` quits.
+### Keys (so far)
+
+| Action | Keys |
+|--------|------|
+| Cursor | arrows · `^E`/`^X`/`^S`/`^D` (diamond) |
+| Word left / right | `^A` / `^F` |
+| Page up / down | `^R` / `^C` · PgUp/PgDn |
+| Line start / end | Home / End |
+| Delete char under cursor | `^G` |
+| Insert / overtype toggle | `^V` |
+| Quit | `⌘Q` |
 
 ## Roadmap
 
-2. Piece-table buffer, full cursor motion, word-wrap, insert/overtype.
 3. WordStar command FSM, `^K`/`^Q` menus, blocks, find/replace, undo/redo.
 4. On-screen formatting: dot commands, margins, bold/underline/italic, reformat, help levels.
 5. Native-format file I/O, `.BAK` backups, palettes, native menu mirroring.

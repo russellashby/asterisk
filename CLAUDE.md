@@ -34,20 +34,27 @@ Input (keyDown) → Command FSM → Editor core → Document model
                                               → Layout → Cell-grid renderer
 ```
 
-| File              | Responsibility                                       |
-|-------------------|------------------------------------------------------|
-| `main.swift`      | NSApplication entry point                            |
-| `AppDelegate.swift` | Window + native menu setup                         |
-| `EditorView.swift`| Input handling, geometry, render-to-grid, drawing    |
-| `CellGrid.swift`  | `Cell` model + diffable grid buffer                  |
-| `TextModel.swift` | **Phase 1 placeholder** line buffer → piece table next |
-| `Theme.swift`     | Role-based colour palette (`Theme.classic`)          |
+Two SwiftPM targets: **`WSCore`** (AppKit-free, unit-tested editor core) and
+**`WordStarMac`** (the AppKit executable, depends on WSCore). A third executable
+target `WSCoreTests` is an XCTest-free test runner (CLT has no XCTest).
+
+| File                              | Responsibility                              |
+|-----------------------------------|---------------------------------------------|
+| `Sources/WSCore/PieceTable.swift` | Piece-table edit buffer (insert/delete/slice) |
+| `Sources/WSCore/Document.swift`   | Cursor, editing, word-wrap layout (incremental relayout) |
+| `Sources/WordStarMac/main.swift`  | NSApplication entry point                    |
+| `Sources/WordStarMac/AppDelegate.swift` | Window + native menu setup            |
+| `Sources/WordStarMac/EditorView.swift`  | Input, geometry, render-to-grid, drawing |
+| `Sources/WordStarMac/CellGrid.swift`    | `Cell` model + diffable grid buffer   |
+| `Sources/WordStarMac/Theme.swift`       | Role-based colour palette (`Theme.classic`) |
+| `Tests/WSCoreTests/*`             | Standalone test runner for WSCore           |
 
 ## Build / run
 
 ```sh
 swift build              # compile
-swift run                # build + launch
+swift run WordStarMac    # build + launch the app
+swift run WSCoreTests    # run the core unit tests (exits non-zero on failure)
 ./bundle.sh              # produce double-clickable WordStar.app
 ```
 
@@ -55,11 +62,16 @@ Requires Command Line Tools (no full Xcode). Swift 6.x; the package pins
 `swiftLanguageVersions: [.v5]` to avoid Swift 6 strict-concurrency friction on
 AppKit main-thread code — keep it that way unless intentionally migrating.
 
+**Testing note:** XCTest is unavailable under CLT-only, so tests are a plain
+executable (`Tests/WSCoreTests`) using a tiny assert harness. WSCore is built
+with `-enable-testing` so the runner can `@testable import` internals.
+
 ## Roadmap (phased; build + verify each before the next)
 
 1. **DONE** — Cell-grid renderer, 80-col letter-box, status/ruler, live typing,
    cursor diamond teaser. Phase 1 existed to de-risk latency; confirmed responsive.
-2. Piece-table buffer, full cursor motion, word-wrap, insert/overtype.
+2. **DONE** — Piece-table buffer, incremental word-wrap layout, full cursor
+   motion (diamond, word, line, page, doc), insert/overtype. Unit tested.
 3. WordStar command FSM, `^K`/`^Q` menus, blocks, find/replace, undo/redo.
 4. On-screen formatting: dot commands, margins, bold/underline/italic, reformat,
    help levels (0–3).
@@ -68,7 +80,8 @@ AppKit main-thread code — keep it that way unless intentionally migrating.
 ## Conventions
 
 - Keep the hot path (keystroke → mutate → diff → draw) allocation-free; no global
-  relayout per keystroke. The monospace grid keeps layout O(1) — preserve that.
-- `TextModel` is a known temporary; replacing it with a piece table is Phase 2's
-  first task. Don't build heavily on its line-array API.
+  relayout per keystroke. Layout is incremental (per-paragraph) — preserve that;
+  `Document.relayout` must stay equivalent to `forceFullRelayout` (fuzz-tested).
+- The view derives everything from `Document` (cursor offset → line/col via the
+  layout cache). Don't duplicate text state in the view.
 - Match the surrounding code style (clear MARK sections, role-based colours).

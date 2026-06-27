@@ -1,4 +1,5 @@
 import AppKit
+import WSCore
 
 /// The editing canvas: a custom layer-backed NSView that owns every keystroke,
 /// renders an 80-column character grid letter-boxed into the window, and repaints
@@ -19,7 +20,7 @@ final class EditorView: NSView {
 
     // MARK: State
     private let grid: CellGrid
-    private let model = TextModel()
+    private let doc = Document(wrapWidth: 65)
     private var scrollTop = 0
     private var fileName = "UNTITLED.WS"
 
@@ -99,8 +100,9 @@ final class EditorView: NSView {
     private var textRows: Int { grid.rows - firstTextRow }
 
     private func clampScroll() {
-        if model.cy < scrollTop { scrollTop = model.cy }
-        if model.cy >= scrollTop + textRows { scrollTop = model.cy - textRows + 1 }
+        let line = doc.cursorLine
+        if line < scrollTop { scrollTop = line }
+        if line >= scrollTop + textRows { scrollTop = line - textRows + 1 }
         if scrollTop < 0 { scrollTop = 0 }
     }
 
@@ -113,7 +115,6 @@ final class EditorView: NSView {
 
     // MARK: - Rendering (model -> grid, diffed)
 
-    /// Set a cell only if it changed, invalidating just that cell's rect.
     private func setCell(_ r: Int, _ c: Int, _ cell: Cell) {
         guard r >= 0, c >= 0, r < grid.rows, c < grid.cols else { return }
         if grid.set(r, c, cell) {
@@ -129,8 +130,9 @@ final class EditorView: NSView {
     }
 
     private func renderStatusLine() {
-        let pos = "PAGE 1  LINE \(model.cy + 1)  COL \(model.cx + 1)"
-        let text = "  \(fileName)    \(pos)    INSERT ON"
+        let pos = "PAGE 1  LINE \(doc.cursorLine + 1)  COL \(doc.cursorColumn + 1)"
+        let mode = doc.insertMode ? "INSERT ON" : "INSERT OFF"
+        let text = "  \(fileName)    \(pos)    \(mode)"
         let chars = Array(text)
         for c in 0..<grid.cols {
             let ch: Character = c < chars.count ? chars[c] : " "
@@ -152,7 +154,7 @@ final class EditorView: NSView {
         for vl in 0..<textRows {
             let gridRow = firstTextRow + vl
             let lineIndex = scrollTop + vl
-            let line: [Character] = (lineIndex < model.lines.count) ? model.lines[lineIndex] : []
+            let line: [Character] = (lineIndex < doc.lineCount) ? doc.lineText(lineIndex) : []
             for c in 0..<grid.cols {
                 let ch: Character = c < line.count ? line[c] : " "
                 setCell(gridRow, c, Cell(ch: ch, role: .text))
@@ -164,8 +166,8 @@ final class EditorView: NSView {
 
     private func updateCursorPosition(invalidateOld: Bool) {
         let oldR = gridCursorRow, oldC = gridCursorCol
-        gridCursorRow = firstTextRow + (model.cy - scrollTop)
-        gridCursorCol = min(model.cx, grid.cols - 1)
+        gridCursorRow = firstTextRow + (doc.cursorLine - scrollTop)
+        gridCursorCol = min(doc.cursorColumn, grid.cols - 1)
         cursorOn = true
         restartBlink()
         if invalidateOld { setNeedsDisplay(cellRect(oldR, oldC)) }
@@ -182,18 +184,15 @@ final class EditorView: NSView {
     }
 
     private func restartBlink() {
-        // Keep the cursor solid right after activity, then resume blinking.
         if blinkTimer != nil { startBlink() }
     }
 
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
-        // Letter-box surround.
         theme.border.setFill()
         dirtyRect.fill()
 
-        // Only iterate cells that intersect the dirty rect.
         let cMin = max(0, Int(floor((dirtyRect.minX - originX) / cellW)))
         let cMax = min(grid.cols - 1, Int(floor((dirtyRect.maxX - originX) / cellW)))
         let rMin = max(0, Int(floor((dirtyRect.minY - originY) / cellH)))
@@ -256,26 +255,37 @@ final class EditorView: NSView {
         }
 
         switch event.keyCode {
-        case 36, 76:           // Return / Enter
-            model.insertNewline()
-        case 51:               // Delete (backspace)
-            model.backspace()
-        case 123: model.moveLeft()
-        case 124: model.moveRight()
-        case 125: model.moveDown()
-        case 126: model.moveUp()
-        default:
-            insertPrintable(event)
+        case 36, 76:  doc.insertNewline()        // Return / Enter
+        case 51:      doc.backspace()            // Delete (backspace)
+        case 117:     doc.deleteForward()        // Forward delete
+        case 123:     doc.moveLeft()
+        case 124:     doc.moveRight()
+        case 125:     doc.moveDown()
+        case 126:     doc.moveUp()
+        case 115:     doc.lineStart()            // Home
+        case 119:     doc.lineEnd()              // End
+        case 116:     doc.pageUp(rows: textRows) // Page Up
+        case 121:     doc.pageDown(rows: textRows) // Page Down
+        default:      insertPrintable(event)
         }
         refresh()
     }
 
+    /// WordStar control-key commands available without a prefix menu.
+    /// (The ^K / ^Q prefix command system arrives in Phase 3.)
     private func handleControl(_ event: NSEvent) {
         switch event.charactersIgnoringModifiers?.lowercased() {
-        case "e": model.moveUp()
-        case "x": model.moveDown()
-        case "s": model.moveLeft()
-        case "d": model.moveRight()
+        case "e": doc.moveUp()                   // diamond up
+        case "x": doc.moveDown()                 // diamond down
+        case "s": doc.moveLeft()                 // diamond left
+        case "d": doc.moveRight()                // diamond right
+        case "a": doc.wordLeft()                 // word left
+        case "f": doc.wordRight()                // word right
+        case "r": doc.pageUp(rows: textRows)     // page up
+        case "c": doc.pageDown(rows: textRows)   // page down
+        case "g": doc.deleteForward()            // delete char under cursor
+        case "v": doc.toggleInsertMode()         // insert/overtype
+        case "h": doc.backspace()                // ^H backspace
         default: break
         }
         refresh()
@@ -286,7 +296,7 @@ final class EditorView: NSView {
         for ch in chars {
             guard let scalar = ch.unicodeScalars.first else { continue }
             if scalar.value >= 0x20 && scalar.value != 0x7f {
-                model.insert(ch)
+                doc.insertChar(ch)
             }
         }
     }
