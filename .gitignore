@@ -1,0 +1,15 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Built app bundle (regenerate with ./bundle.sh)
+WordStar.app/
+
+# macOS
+.DS_Store
+
+# Xcode (if ever opened)
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
