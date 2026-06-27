@@ -322,6 +322,23 @@ public final class Document {
         syncPreferredColumn()
     }
 
+    /// Text of the marked block (for system-clipboard copy/cut), or nil.
+    public func blockText() -> String? {
+        guard let r = blockRange else { return nil }
+        return String(pt.slice(r))
+    }
+
+    /// Insert a string at the cursor as one undo step (system-clipboard paste).
+    /// Preserves any embedded control bytes; inserts regardless of insert mode.
+    public func insertText(_ s: String) {
+        let chars = Array(s)
+        guard !chars.isEmpty else { return }
+        endTyping(); pushUndo()
+        rawInsert(chars, at: cursor)
+        cursor += chars.count
+        syncPreferredColumn()
+    }
+
     /// ^KY — delete the marked block.
     public func deleteBlock() {
         guard let r = blockRange else { return }

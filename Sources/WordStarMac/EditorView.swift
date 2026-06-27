@@ -673,6 +673,33 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
 
     // MARK: - Menu actions (native keys mirroring WordStar commands)
 
+    @objc func wsCopy(_ sender: Any?) {
+        guard let text = doc.blockText() else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+        message = "Copied"
+        refresh()
+    }
+
+    @objc func wsCut(_ sender: Any?) {
+        guard let text = doc.blockText() else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+        doc.deleteBlock()
+        refresh()
+    }
+
+    @objc func wsPaste(_ sender: Any?) {
+        guard let raw = NSPasteboard.general.string(forType: .string) else { return }
+        // Normalise line endings to the document's '\n'.
+        let text = raw.replacingOccurrences(of: "\r\n", with: "\n")
+                      .replacingOccurrences(of: "\r", with: "\n")
+        doc.insertText(text)
+        refresh()
+    }
+
     @objc func wsToggleScanlines(_ sender: Any?) { scanlinesOn.toggle(); needsDisplay = true }
     @objc func wsToggleGlow(_ sender: Any?)      { glowOn.toggle(); needsDisplay = true }
 
@@ -680,6 +707,10 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
         switch menuItem.action {
         case #selector(wsToggleScanlines(_:)): menuItem.state = scanlinesOn ? .on : .off
         case #selector(wsToggleGlow(_:)):      menuItem.state = glowOn ? .on : .off
+        case #selector(wsCopy(_:)), #selector(wsCut(_:)):
+            return doc.blockRange != nil
+        case #selector(wsPaste(_:)):
+            return NSPasteboard.general.string(forType: .string) != nil
         default: break
         }
         return true

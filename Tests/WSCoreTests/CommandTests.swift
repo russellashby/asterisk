@@ -6,6 +6,40 @@ func runCommandTests() {
     runBlockTests()
     runFindReplaceTests()
     runUndoTests()
+    runClipboardTests()
+}
+
+private func runClipboardTests() {
+    // blockText extracts the marked region (clipboard copy/cut source).
+    do {
+        let d = Document(wrapWidth: 65)
+        for ch in "hello world" { d.insertChar(ch) }
+        d.documentStart(); for _ in 0..<6 { d.moveRight() }
+        d.markBlockBegin(); for _ in 0..<5 { d.moveRight() }; d.markBlockEnd()
+        eq(d.blockText() ?? "", "world", "blockText returns marked text")
+    }
+    do {
+        let d = Document(wrapWidth: 65)
+        for ch in "abc" { d.insertChar(ch) }
+        check(d.blockText() == nil, "blockText nil with no block")
+    }
+
+    // insertText (paste) inserts at cursor as one undo step, multi-line ok.
+    do {
+        let d = Document(wrapWidth: 65)
+        for ch in "ad" { d.insertChar(ch) }
+        d.documentStart(); d.moveRight()        // between a and d
+        d.insertText("bc")
+        eq(d.text(), "abcd", "paste inserts at cursor")
+        eq(d.cursor, 3, "cursor after pasted text")
+        d.undo()
+        eq(d.text(), "ad", "paste is one undo step")
+    }
+    do {
+        let d = Document(wrapWidth: 65)
+        d.insertText("line1\nline2")
+        eq(d.lineCount, 2, "multi-line paste creates lines")
+    }
 }
 
 private func runCommandResolution() {

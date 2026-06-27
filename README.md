@@ -29,6 +29,9 @@ dirty-state title and unsaved-changes prompt on close.
 **CRT effects:** subtle scanlines + phosphor glow, both toggleable from the
 **View** menu (no screen curvature). Pairs nicely with the amber theme.
 
+**Clipboard:** `⌘C`/`⌘X` copy/cut the marked block to the system pasteboard,
+`⌘V` pastes at the cursor (line-endings normalized, format bytes preserved).
+
 ### Try it
 
 ```sh
@@ -61,13 +64,13 @@ open WordStar.app
 | Reform paragraph · cycle help level | `^B` · `^J` |
 | **File** (`^K`) save · read/open | `^KS` · `^KR` |
 | Native menu: New/Open/Save/Save As | `⌘N` `⌘O` `⌘S` `⌘⇧S` |
-| Native menu: Undo/Redo/Find/Replace | `⌘Z` `⌘⇧Z` `⌘F` `⌘G` `⌘R` |
+| Native menu: Undo/Redo · Cut/Copy/Paste | `⌘Z` `⌘⇧Z` · `⌘X` `⌘C` `⌘V` |
+| Native menu: Find/Find-next/Replace | `⌘F` `⌘G` `⌘R` |
 | Quit | `⌘Q` |
 
 ## Roadmap / backlog
 
 - **4b** — dynamic dot-command margins (`.lm`/`.rm`) and pagination (`.pa`/`.pl`).
-- System clipboard (`⌘C`/`⌘X`/`⌘V`).
 - CP437 bitmap font (DOS glyphs). _(CRT glow/scanlines done — View menu.)_
 - Palette switching UI + fuller native menu mirroring.
 - Remaining commands: `^QE`/`^QX`, `^O` onscreen menu, `^P` print/PDF pipeline.
