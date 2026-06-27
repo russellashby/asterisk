@@ -13,3 +13,6 @@ WordStar.app/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
 DerivedData/
+
+# Stray tool output
+.nwave/
