@@ -43,6 +43,7 @@ target `WSCoreTests` is an XCTest-free test runner (CLT has no XCTest).
 | `Sources/WSCore/PieceTable.swift` | Piece-table edit buffer (insert/delete/slice/snapshot) |
 | `Sources/WSCore/Document.swift`   | Cursor, editing, word-wrap layout, blocks, find/replace, undo |
 | `Sources/WSCore/Commands.swift`   | `EditorCommand` + ^K/^Q key→command resolution |
+| `Sources/WSCore/Formatting.swift` | Inline format attrs + control-byte mapping |
 | `Sources/WordStarMac/main.swift`  | NSApplication entry point                    |
 | `Sources/WordStarMac/AppDelegate.swift` | Window + native menu setup            |
 | `Sources/WordStarMac/EditorView.swift`  | Input, geometry, render-to-grid, drawing |
@@ -76,9 +77,12 @@ with `-enable-testing` so the runner can `@testable import` internals.
 3. **DONE** — Command FSM (`^K`/`^Q` prefixes), block ops (mark/copy/move/
    delete/hide with highlight), find & find/replace (prompt input), undo/redo
    (snapshot-based, typing coalesced). Native Edit menu mirrors commands. Tested.
-4. On-screen formatting: dot commands, margins, bold/underline/italic, reformat,
-   help levels (0–3).
-5. Native-format file I/O, authentic `.BAK` backups, palettes, native menu mirroring.
+4. **DONE** — Inline formatting (`^P` bold/underline/italic, rendered with real
+   font traits + highlighted markers), dot-command lines (recognised + dimmed),
+   `^B` reform, help levels 0–3 (`^J`). Amber/green/classic phosphor themes.
+   **Deferred to 4b:** dynamic `.lm`/`.rm` margin effects and `.pa`/`.pl`
+   pagination (dot lines display but don't yet reflow/paginate).
+5. Native-format file I/O, authentic `.BAK` backups, palette switching, native menu mirroring.
 
 ## Conventions
 

@@ -20,6 +20,8 @@ print("Document tests…")
 runDocumentTests()
 print("Command / block / find / undo tests…")
 runCommandTests()
+print("Formatting / dot-command tests…")
+runFormattingTests()
 
 if failures == 0 {
     print("\nAll tests passed ✓")

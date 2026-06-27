@@ -10,11 +10,12 @@ final class EditorView: NSView {
     private let theme = Theme.amber
     private let textColumns = 80
     private let statusRow = 0
-    private let infoRow   = 1     // ruler, or prompt / message when active
-    private let firstTextRow = 2
 
-    // MARK: Font metrics
+    // MARK: Fonts (regular + style variants for inline formatting)
     private let font: NSFont
+    private let boldFont: NSFont
+    private let italicFont: NSFont
+    private let boldItalicFont: NSFont
     private let cellW: CGFloat
     private let cellH: CGFloat
 
@@ -23,9 +24,10 @@ final class EditorView: NSView {
     private let doc = Document(wrapWidth: 65)
     private var scrollTop = 0
     private var fileName = "UNTITLED.WS"
+    private var helpLevel = 3      // 0 = no menu … 3 = full WordStar main menu
 
     // MARK: Command FSM / prompt
-    private enum InputState { case normal, awaitBlock, awaitQuick }
+    private enum InputState { case normal, awaitBlock, awaitQuick, awaitPrint }
     private enum Prompt { case find, replaceSearch, replaceWith(String) }
     private var inputState: InputState = .normal
     private var prompt: Prompt?
@@ -33,7 +35,7 @@ final class EditorView: NSView {
     private var message: String?
     private var promptCaretCol = 0
 
-    // MARK: Geometry (recomputed on resize)
+    // MARK: Geometry
     private var originX: CGFloat = 0
     private var originY: CGFloat = 0
 
@@ -43,15 +45,29 @@ final class EditorView: NSView {
     private var cursorOn = true
     private var blinkTimer: Timer?
 
+    // MARK: - Layout of header rows (driven by help level)
+
+    private var menuRowCount: Int {
+        switch helpLevel { case 0: return 0; case 1: return 1; case 2: return 3; default: return 4 }
+    }
+    private var infoRowIndex: Int { 1 + menuRowCount }   // ruler / prompt / message
+    private var firstTextRow: Int { infoRowIndex + 1 }
+    private var textRows: Int { max(0, grid.rows - firstTextRow) }
+
     // MARK: - Init
 
     override init(frame frameRect: NSRect) {
-        let f = NSFont(name: "Menlo", size: 14)
+        let base = NSFont(name: "Menlo", size: 14)
             ?? NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
-        self.font = f
-        let probe = ("M" as NSString).size(withAttributes: [.font: f])
+        let fm = NSFontManager.shared
+        self.font = base
+        self.boldFont = fm.convert(base, toHaveTrait: .boldFontMask)
+        self.italicFont = fm.convert(base, toHaveTrait: .italicFontMask)
+        self.boldItalicFont = fm.convert(fm.convert(base, toHaveTrait: .boldFontMask),
+                                         toHaveTrait: .italicFontMask)
+        let probe = ("M" as NSString).size(withAttributes: [.font: base])
         self.cellW = ceil(probe.width)
-        self.cellH = ceil(f.ascender - f.descender + f.leading)
+        self.cellH = ceil(base.ascender - base.descender + base.leading)
         self.grid = CellGrid(cols: 80, rows: 25)
         super.init(frame: frameRect)
         wantsLayer = true
@@ -63,7 +79,6 @@ final class EditorView: NSView {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
-    /// Preferred window content width so 80 columns fit with a little margin.
     var preferredContentWidth: CGFloat { cellW * CGFloat(textColumns) + 24 }
 
     // MARK: - Responder / focus
@@ -98,8 +113,6 @@ final class EditorView: NSView {
         needsDisplay = true
     }
 
-    private var textRows: Int { grid.rows - firstTextRow }
-
     private func clampScroll() {
         let line = doc.cursorLine
         if line < scrollTop { scrollTop = line }
@@ -124,19 +137,51 @@ final class EditorView: NSView {
     private func renderGrid() {
         clampScroll()
         renderStatusLine()
+        renderMenu()
         renderInfoRow()
         renderText()
+    }
+
+    private func writeRow(_ row: Int, _ text: String, role: CellRole) {
+        let chars = Array(text)
+        for c in 0..<grid.cols {
+            let ch: Character = c < chars.count ? chars[c] : " "
+            setCell(row, c, Cell(ch: ch, role: role))
+        }
     }
 
     private func renderStatusLine() {
         let pos = "L\(doc.cursorLine + 1) C\(doc.cursorColumn + 1)"
         let mode = doc.insertMode ? "INSERT" : "OVERTYPE"
         let blk = doc.blockRange != nil ? "  BLOCK" : ""
-        let text = "  \(fileName)    \(pos)    \(mode)\(blk)"
-        let chars = Array(text)
-        for c in 0..<grid.cols {
-            let ch: Character = c < chars.count ? chars[c] : " "
-            setCell(statusRow, c, Cell(ch: ch, role: .status))
+        writeRow(statusRow, "  \(fileName)    \(pos)    \(mode)\(blk)    HELP \(helpLevel)",
+                 role: .status)
+    }
+
+    private func renderMenu() {
+        let lines = menuLines()
+        for i in 0..<menuRowCount {
+            writeRow(1 + i, i < lines.count ? lines[i] : "", role: .ruler)
+        }
+    }
+
+    private func menuLines() -> [String] {
+        switch helpLevel {
+        case 1:
+            return ["^Q Quick  ^K Block  ^P Print  ^B Reform  ^L Find-next  ^U Undo  ^J Help-"]
+        case 2:
+            return [
+                "  <<<  M A I N   M E N U  >>>",
+                "Cursor ^E/^X up/dn  ^S/^D l/r  ^A/^F word  ^R/^C page",
+                "Block ^K   Quick ^Q   Print ^P   Reform ^B   Undo ^U   Help ^J",
+            ]
+        default:
+            return [
+                "  <<<  M A I N   M E N U  >>>          press ^J to change help level",
+                "Cursor           Scroll       Delete          Misc          Menus",
+                "^E up   ^X down   ^R pg-up     ^G char         ^V ins/over   ^K Block",
+                "^S/^D ^A/^F word  ^C pg-down   ^T word ^Y line ^B reform     ^Q Quick ^P Print",
+            ]
         }
     }
 
@@ -150,22 +195,14 @@ final class EditorView: NSView {
             }
             let text = label + promptBuffer
             promptCaretCol = min(text.count, grid.cols - 1)
-            writeInfo(text, role: .status)
+            writeRow(infoRowIndex, text, role: .status)
             return
         }
         if let m = message {
-            writeInfo(m, role: .status)
+            writeRow(infoRowIndex, m, role: .status)
             return
         }
         renderRuler()
-    }
-
-    private func writeInfo(_ text: String, role: CellRole) {
-        let chars = Array(text)
-        for c in 0..<grid.cols {
-            let ch: Character = c < chars.count ? chars[c] : " "
-            setCell(infoRow, c, Cell(ch: ch, role: role))
-        }
     }
 
     private func renderRuler() {
@@ -174,7 +211,7 @@ final class EditorView: NSView {
             if c == 0 { ch = "L" }
             else if c == 64 { ch = "R" }
             else if c % 5 == 0 { ch = "!" }
-            setCell(infoRow, c, Cell(ch: ch, role: .ruler))
+            setCell(infoRowIndex, c, Cell(ch: ch, role: .ruler))
         }
     }
 
@@ -183,17 +220,44 @@ final class EditorView: NSView {
         for vl in 0..<textRows {
             let gridRow = firstTextRow + vl
             let lineIndex = scrollTop + vl
-            let hasLine = lineIndex < doc.lineCount
-            let line: [Character] = hasLine ? doc.lineText(lineIndex) : []
-            let lineStart = hasLine ? doc.lineStartOffset(lineIndex) : 0
-            for c in 0..<grid.cols {
-                let ch: Character = c < line.count ? line[c] : " "
-                var cell = Cell(ch: ch, role: .text)
-                if let b = block, c < line.count {
-                    let off = lineStart + c
-                    if off >= b.lowerBound && off < b.upperBound { cell.inverse = true }
+
+            guard lineIndex < doc.lineCount else {
+                for c in 0..<grid.cols { setCell(gridRow, c, Cell(ch: " ", role: .text)) }
+                continue
+            }
+
+            let chars = doc.lineText(lineIndex)
+            let lineStart = doc.lineStartOffset(lineIndex)
+
+            if doc.lineIsDot(lineIndex) {
+                for c in 0..<grid.cols {
+                    let ch: Character = c < chars.count ? chars[c] : " "
+                    setCell(gridRow, c, Cell(ch: ch, role: .ruler))   // dot line: dimmed
                 }
-                setCell(gridRow, c, cell)
+                continue
+            }
+
+            var attrs = doc.lineEntryAttrs(lineIndex)
+            for c in 0..<grid.cols {
+                guard c < chars.count else { setCell(gridRow, c, Cell(ch: " ", role: .text)); continue }
+                let ch = chars[c]
+                let off = lineStart + c
+                let inBlock = block.map { off >= $0.lowerBound && off < $0.upperBound } ?? false
+
+                if let f = formatToggled(by: ch) {
+                    // Show the control byte as a highlighted marker letter.
+                    var cell = Cell(ch: formatMarkerLetter(ch) ?? "?", role: .text)
+                    cell.inverse = true
+                    setCell(gridRow, c, cell)
+                    attrs.toggle(f)
+                } else {
+                    var cell = Cell(ch: ch, role: .text)
+                    cell.bold = attrs.bold
+                    cell.underline = attrs.underline
+                    cell.italic = attrs.italic
+                    cell.inverse = inBlock
+                    setCell(gridRow, c, cell)
+                }
             }
         }
     }
@@ -203,7 +267,7 @@ final class EditorView: NSView {
     private func updateCursorPosition(invalidateOld: Bool) {
         let oldR = gridCursorRow, oldC = gridCursorCol
         if prompt != nil {
-            gridCursorRow = infoRow
+            gridCursorRow = infoRowIndex
             gridCursorCol = promptCaretCol
         } else {
             gridCursorRow = firstTextRow + (doc.cursorLine - scrollTop)
@@ -255,7 +319,14 @@ final class EditorView: NSView {
         rect.fill()
 
         if cell.ch != " " {
-            var attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: fg]
+            let glyphFont: NSFont
+            switch (cell.bold, cell.italic) {
+            case (true, true):   glyphFont = boldItalicFont
+            case (true, false):  glyphFont = boldFont
+            case (false, true):  glyphFont = italicFont
+            case (false, false): glyphFont = font
+            }
+            var attrs: [NSAttributedString.Key: Any] = [.font: glyphFont, .foregroundColor: fg]
             if cell.underline { attrs[.underlineStyle] = NSUnderlineStyle.single.rawValue }
             (String(cell.ch) as NSString).draw(at: CGPoint(x: rect.minX, y: rect.minY),
                                                withAttributes: attrs)
@@ -277,7 +348,6 @@ final class EditorView: NSView {
     // MARK: - Input
 
     override func keyDown(with event: NSEvent) {
-        // Prompt mode captures all non-Command keys.
         if prompt != nil {
             if event.modifierFlags.contains(.command) { super.keyDown(with: event) }
             else { handlePrompt(event) }
@@ -287,15 +357,14 @@ final class EditorView: NSView {
         let flags = event.modifierFlags
         if flags.contains(.command) { super.keyDown(with: event); return }
 
-        // Awaiting a key after a ^K / ^Q prefix.
         switch inputState {
         case .awaitBlock: completePrefix(event, resolveBlockCommand); return
         case .awaitQuick: completePrefix(event, resolveQuickCommand); return
+        case .awaitPrint: completePrint(event); return
         case .normal: break
         }
 
         if message != nil { message = nil }
-
         if flags.contains(.control) { handleControl(event); return }
 
         switch event.keyCode {
@@ -319,6 +388,7 @@ final class EditorView: NSView {
         switch event.charactersIgnoringModifiers?.lowercased() {
         case "k": inputState = .awaitBlock; message = "^K  B/K mark  C copy  V move  Y delete  H hide"
         case "q": inputState = .awaitQuick; message = "^Q  S/D line  R/C doc  B/K block  F find  A replace  Y del-eol"
+        case "p": inputState = .awaitPrint; message = "^P  B bold  S underline  Y italic"
         case "e": doc.moveUp()
         case "x": doc.moveDown()
         case "s": doc.moveLeft()
@@ -331,12 +401,21 @@ final class EditorView: NSView {
         case "h": doc.backspace()
         case "t": doc.deleteWordRight()
         case "y": doc.deleteLine()
+        case "b": doc.reformParagraph()
         case "v": doc.toggleInsertMode()
         case "u": doc.undo()
         case "l": runFindNext()
+        case "j": cycleHelpLevel()
         default: break
         }
         refresh()
+    }
+
+    private func cycleHelpLevel() {
+        helpLevel = helpLevel == 0 ? 3 : helpLevel - 1
+        computeGeometry()
+        clampScroll()
+        needsDisplay = true
     }
 
     private func completePrefix(_ event: NSEvent, _ resolver: (Character) -> EditorCommand?) {
@@ -346,6 +425,19 @@ final class EditorView: NSView {
         guard let ch = event.charactersIgnoringModifiers?.first,
               let cmd = resolver(ch) else { refresh(); return }
         execute(cmd)
+        refresh()
+    }
+
+    private func completePrint(_ event: NSEvent) {
+        inputState = .normal
+        message = nil
+        if event.keyCode == 53 { refresh(); return }
+        switch event.charactersIgnoringModifiers?.lowercased() {
+        case "b": doc.insertFormat(.bold)
+        case "s": doc.insertFormat(.underline)
+        case "y": doc.insertFormat(.italic)
+        default: break
+        }
         refresh()
     }
 
@@ -388,8 +480,8 @@ final class EditorView: NSView {
 
     private func handlePrompt(_ event: NSEvent) {
         switch event.keyCode {
-        case 53:        prompt = nil; message = nil                 // Esc
-        case 36, 76:    confirmPrompt(); return                    // Return
+        case 53:        prompt = nil; message = nil
+        case 36, 76:    confirmPrompt(); return
         case 51:        if !promptBuffer.isEmpty { promptBuffer.removeLast() }
         default:
             if let chars = event.characters {
@@ -432,7 +524,7 @@ final class EditorView: NSView {
         updateCursorPosition(invalidateOld: true)
     }
 
-    // MARK: - Menu actions (mirror WordStar commands with native keys)
+    // MARK: - Menu actions (native keys mirroring WordStar commands)
 
     @objc func wsUndo(_ sender: Any?)     { doc.undo(); refresh() }
     @objc func wsRedo(_ sender: Any?)     { doc.redo(); refresh() }

@@ -15,6 +15,7 @@ struct Cell: Equatable {
     var role: CellRole = .blank
     var bold = false
     var underline = false
+    var italic = false
     var inverse = false
 }
 

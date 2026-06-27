@@ -3,9 +3,15 @@ import Foundation
 /// A visual (on-screen) line: content is the half-open document range
 /// `[start, end)`. The gap to the next line's start is 0 for a soft word-wrap
 /// or 1 for a hard newline (the '\n' lives at `end`).
+///
+/// `entry` is the format-attribute state in effect at the line's first column
+/// (attributes carry across soft-wrapped lines but reset at each hard newline).
+/// `isDot` marks a WordStar dot-command line (starts with '.' in column 1).
 struct VisualLine: Equatable {
     var start: Int
     var end: Int
+    var entry: TextAttrs = TextAttrs()
+    var isDot: Bool = false
 }
 
 /// The editable document: a piece-table buffer plus a word-wrap layout cache, a
@@ -82,6 +88,12 @@ public final class Document {
 
     /// Document offset of the first character of a visual line (for highlight).
     public func lineStartOffset(_ index: Int) -> Int { lines[index].start }
+
+    /// Format attributes in effect at the start of a visual line.
+    public func lineEntryAttrs(_ index: Int) -> TextAttrs { lines[index].entry }
+
+    /// Whether a visual line is a WordStar dot-command line.
+    public func lineIsDot(_ index: Int) -> Bool { lines[index].isDot }
 
     public var blockRange: Range<Int>? {
         guard let b = blockBegin, let e = blockEnd else { return nil }
@@ -162,6 +174,18 @@ public final class Document {
     }
 
     public func toggleInsertMode() { endTyping(); insertMode.toggle() }
+
+    /// ^P prefix — insert an inline format-toggle control byte at the cursor.
+    public func insertFormat(_ f: Format) {
+        endTyping(); pushUndo()
+        rawInsert([formatControlChar(f)], at: cursor)
+        cursor += 1
+        syncPreferredColumn()
+    }
+
+    /// ^B — reform (re-wrap) the current paragraph. With layout-time wrapping the
+    /// text is always reflowed, so this just normalises the layout.
+    public func reformParagraph() { endTyping(); forceFullRelayout() }
 
     /// ^QY — delete from the cursor to the end of the logical line.
     public func deleteToLineEnd() {
@@ -419,48 +443,76 @@ public final class Document {
         if cursor > count { cursor = count }
     }
 
-    /// Greedy word wrap over `[a, b)`, splitting on '\n' (hard) and the right
-    /// margin (soft). Breaks after the space following a word so trailing spaces
-    /// stay on the left line and every offset maps to exactly one line.
+    /// Wrap the document span `[a, b)` into visual lines: split into logical
+    /// lines on '\n', emit dot-command lines whole, and greedily word-wrap the
+    /// rest at the right margin while tracking inline format attributes. First
+    /// line starts at `a`, last ends at `b`, gaps are 0 (soft) or 1 (the '\n').
     private func wrapParagraphs(_ a: Int, _ b: Int) -> [VisualLine] {
         var result: [VisualLine] = []
         let chars = pt.slice(a..<b)
         let n = chars.count
 
-        var curStart = a
-        var lastBreak = -1
-        var idx = 0
-        while idx < n {
-            let ch = chars[idx]
-            let abs = a + idx
-
-            if ch == "\n" {
-                result.append(VisualLine(start: curStart, end: abs))
-                curStart = abs + 1
-                lastBreak = -1
-                idx += 1
-                continue
+        var segStart = 0   // index into `chars` of the current logical line
+        while segStart <= n {
+            var j = segStart
+            while j < n, chars[j] != "\n" { j += 1 }
+            appendLogicalLine(chars: chars, baseA: a, ls: segStart, le: j, into: &result)
+            if j < n {
+                segStart = j + 1
+                if segStart == n {   // text ends with '\n' → trailing empty line
+                    result.append(VisualLine(start: a + n, end: a + n))
+                    break
+                }
+            } else {
+                break
             }
+        }
 
-            let lineLen = abs - curStart + 1
+        if result.isEmpty { result.append(VisualLine(start: a, end: b)) }
+        return result
+    }
+
+    /// Wrap one logical line `[ls, le)` (indices into `chars`, absolute offset =
+    /// baseA + index), appending its visual lines. Dot-command lines are emitted
+    /// whole; otherwise greedy word-wrap, recording each line's entry attributes.
+    private func appendLogicalLine(chars: [Character], baseA: Int, ls: Int, le: Int,
+                                   into result: inout [VisualLine]) {
+        let absLS = baseA + ls
+        let absLE = baseA + le
+
+        if le > ls, chars[ls] == "." {
+            result.append(VisualLine(start: absLS, end: absLE, entry: TextAttrs(), isDot: true))
+            return
+        }
+
+        var curStart = absLS
+        var lineEntry = TextAttrs()   // attrs at curStart
+        var attrs = TextAttrs()       // running attrs as of position p
+        var lastBreak = -1
+        var attrsAtBreak = TextAttrs()
+        var p = ls
+        while p < le {
+            let absP = baseA + p
+            let lineLen = absP - curStart + 1
             if lineLen > wrapWidth {
                 if lastBreak > curStart {
-                    result.append(VisualLine(start: curStart, end: lastBreak))
+                    result.append(VisualLine(start: curStart, end: lastBreak, entry: lineEntry))
                     curStart = lastBreak
+                    lineEntry = attrsAtBreak
                 } else {
-                    result.append(VisualLine(start: curStart, end: abs))
-                    curStart = abs
+                    result.append(VisualLine(start: curStart, end: absP, entry: lineEntry))
+                    curStart = absP
+                    lineEntry = attrs
                 }
                 lastBreak = -1
                 continue
             }
-
-            if ch == " " { lastBreak = abs + 1 }
-            idx += 1
+            let ch = chars[p]
+            if let f = formatToggled(by: ch) { attrs.toggle(f) }
+            if ch == " " { lastBreak = absP + 1; attrsAtBreak = attrs }
+            p += 1
         }
-
-        result.append(VisualLine(start: curStart, end: b))
-        return result
+        result.append(VisualLine(start: curStart, end: absLE, entry: lineEntry))
     }
 
     /// Incremental relayout: re-wrap only the paragraph span touched by an edit
@@ -491,8 +543,10 @@ public final class Document {
 
         var suffix: [VisualLine] = []
         while m < lines.count {
-            suffix.append(VisualLine(start: lines[m].start + delta,
-                                     end: lines[m].end + delta))
+            var vl = lines[m]
+            vl.start += delta
+            vl.end += delta
+            suffix.append(vl)   // entry attrs / isDot unchanged (content unchanged)
             m += 1
         }
 
