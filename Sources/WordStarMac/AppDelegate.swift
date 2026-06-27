@@ -41,6 +41,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         keyEquivalent: "q")
         appItem.submenu = appMenu
 
+        // File menu
+        let fileItem = NSMenuItem()
+        mainMenu.addItem(fileItem)
+        let fileMenu = NSMenu(title: "File")
+        addItem(fileMenu, "New  (^KN)", #selector(EditorView.wsNew(_:)), "n")
+        addItem(fileMenu, "Open…  (^KR)", #selector(EditorView.wsOpen(_:)), "o")
+        fileMenu.addItem(.separator())
+        addItem(fileMenu, "Save  (^KS)", #selector(EditorView.wsSave(_:)), "s")
+        let saveAs = NSMenuItem(title: "Save As…", action: #selector(EditorView.wsSaveAs(_:)), keyEquivalent: "S")
+        saveAs.keyEquivalentModifierMask = [.command, .shift]
+        saveAs.target = nil
+        fileMenu.addItem(saveAs)
+        fileItem.submenu = fileMenu
+
         // Edit menu — native keys mirroring WordStar commands (WS keys shown).
         let editItem = NSMenuItem()
         mainMenu.addItem(editItem)

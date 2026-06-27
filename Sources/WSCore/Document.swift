@@ -33,6 +33,10 @@ public final class Document {
     private(set) public var cursor = 0      // offset 0...count
     private var preferredColumn = 0
 
+    /// Monotonic edit counter for dirty-state tracking (bumps on every change,
+    /// including undo/redo). Compare against a saved value to detect changes.
+    private(set) public var revision = 0
+
     // Block marks (document offsets) and highlight visibility.
     public private(set) var blockBegin: Int?
     public private(set) var blockEnd: Int?
@@ -117,6 +121,7 @@ public final class Document {
     // MARK: - Low-level edit primitives (buffer + layout + mark tracking)
 
     private func rawInsert(_ chars: [Character], at offset: Int) {
+        revision += 1
         pt.insert(chars, at: offset)
         relayout(editStart: offset, delta: chars.count)
         if let b = blockBegin, b > offset { blockBegin = b + chars.count }
@@ -124,6 +129,7 @@ public final class Document {
     }
 
     private func rawDelete(_ range: Range<Int>) {
+        revision += 1
         pt.delete(range)
         relayout(editStart: range.lowerBound, delta: -range.count)
         blockBegin = shiftForDelete(blockBegin, range)
@@ -410,6 +416,7 @@ public final class Document {
     }
 
     private func apply(_ s: DocState) {
+        revision += 1
         pt.restore(pieces: s.pieces, count: s.count)
         cursor = min(s.cursor, s.count)
         blockBegin = s.blockBegin

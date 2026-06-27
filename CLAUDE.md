@@ -82,7 +82,11 @@ with `-enable-testing` so the runner can `@testable import` internals.
    `^B` reform, help levels 0–3 (`^J`). Amber/green/classic phosphor themes.
    **Deferred to 4b:** dynamic `.lm`/`.rm` margin effects and `.pa`/`.pl`
    pagination (dot lines display but don't yet reflow/paginate).
-5. Native-format file I/O, authentic `.BAK` backups, palette switching, native menu mirroring.
+5. **DONE** — File I/O: New/Open/Save/Save As (File menu + `^KS`/`^KR`), native
+   format = raw text with control bytes + dot lines (lossless round-trip),
+   `.BAK` backups, revision-based dirty tracking, window title + close prompt.
+   **Remaining backlog (see task list / below):** 4b margins+pagination, system
+   clipboard, CP437 font + CRT polish, palette switching, ^O/^P/print pipeline.
 
 ## Conventions
 

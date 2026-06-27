@@ -4,7 +4,7 @@ import WSCore
 /// The editing canvas: a custom layer-backed NSView that owns every keystroke,
 /// renders an 80-column character grid letter-boxed into the window, and repaints
 /// only the cells that actually changed. This is the latency-critical surface.
-final class EditorView: NSView {
+final class EditorView: NSView, NSWindowDelegate {
 
     // MARK: Configuration
     private let theme = Theme.amber
@@ -21,10 +21,15 @@ final class EditorView: NSView {
 
     // MARK: State
     private let grid: CellGrid
-    private let doc = Document(wrapWidth: 65)
+    private var doc = Document(wrapWidth: 65)
     private var scrollTop = 0
     private var fileName = "UNTITLED.WS"
     private var helpLevel = 3      // 0 = no menu … 3 = full WordStar main menu
+
+    // MARK: File
+    private var filePath: URL?
+    private var savedRevision = 0
+    private var isDirty: Bool { doc.revision != savedRevision }
 
     // MARK: Command FSM / prompt
     private enum InputState { case normal, awaitBlock, awaitQuick, awaitPrint }
@@ -358,7 +363,7 @@ final class EditorView: NSView {
         if flags.contains(.command) { super.keyDown(with: event); return }
 
         switch inputState {
-        case .awaitBlock: completePrefix(event, resolveBlockCommand); return
+        case .awaitBlock: completeBlockPrefix(event); return
         case .awaitQuick: completePrefix(event, resolveQuickCommand); return
         case .awaitPrint: completePrint(event); return
         case .normal: break
@@ -386,7 +391,7 @@ final class EditorView: NSView {
 
     private func handleControl(_ event: NSEvent) {
         switch event.charactersIgnoringModifiers?.lowercased() {
-        case "k": inputState = .awaitBlock; message = "^K  B/K mark  C copy  V move  Y delete  H hide"
+        case "k": inputState = .awaitBlock; message = "^K  B/K mark  C copy  V move  Y delete  H hide  |  S save  R read  D done"
         case "q": inputState = .awaitQuick; message = "^Q  S/D line  R/C doc  B/K block  F find  A replace  Y del-eol"
         case "p": inputState = .awaitPrint; message = "^P  B bold  S underline  Y italic"
         case "e": doc.moveUp()
@@ -425,6 +430,21 @@ final class EditorView: NSView {
         guard let ch = event.charactersIgnoringModifiers?.first,
               let cmd = resolver(ch) else { refresh(); return }
         execute(cmd)
+        refresh()
+    }
+
+    /// The ^K menu mixes block commands and file commands (as in WordStar).
+    private func completeBlockPrefix(_ event: NSEvent) {
+        inputState = .normal
+        message = nil
+        if event.keyCode == 53 { refresh(); return }   // Esc
+        guard let ch = event.charactersIgnoringModifiers?.first else { refresh(); return }
+        switch Character(ch.lowercased()) {
+        case "s", "d", "x": saveDocument()             // save (and "done"/"exit")
+        case "r":           openDocument()             // read/open a file
+        default:
+            if let cmd = resolveBlockCommand(ch) { execute(cmd) }
+        }
         refresh()
     }
 
@@ -522,10 +542,110 @@ final class EditorView: NSView {
     private func refresh() {
         renderGrid()
         updateCursorPosition(invalidateOld: true)
+        updateTitle()
+    }
+
+    // MARK: - File I/O
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.delegate = self
+        updateTitle()
+    }
+
+    private func updateTitle() {
+        fileName = (filePath?.lastPathComponent ?? "UNTITLED.WS")
+        window?.title = (isDirty ? "• " : "") + "WordStar — " + fileName
+    }
+
+    private func newDocument() {
+        guard confirmDiscardIfNeeded() else { return }
+        doc = Document(wrapWidth: 65)
+        filePath = nil
+        savedRevision = doc.revision
+        scrollTop = 0
+        refresh()
+    }
+
+    private func openDocument() {
+        guard confirmDiscardIfNeeded() else { return }
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let data = try? Data(contentsOf: url) else { message = "Can't read \(url.lastPathComponent)"; refresh(); return }
+        let text = String(data: data, encoding: .utf8)
+            ?? String(data: data, encoding: .isoLatin1) ?? ""
+        doc = Document(text: text, wrapWidth: 65)
+        filePath = url
+        savedRevision = doc.revision
+        scrollTop = 0
+        message = "Opened \(url.lastPathComponent)"
+        refresh()
+    }
+
+    @discardableResult
+    private func saveDocument() -> Bool {
+        guard let url = filePath else { return saveDocumentAs() }
+        return write(to: url)
+    }
+
+    @discardableResult
+    private func saveDocumentAs() -> Bool {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = filePath?.lastPathComponent ?? "UNTITLED.WS"
+        guard panel.runModal() == .OK, let url = panel.url else { return false }
+        filePath = url
+        return write(to: url)
+    }
+
+    private func write(to url: URL) -> Bool {
+        let fm = FileManager.default
+        // WordStar-style .BAK backup of the previous version.
+        if fm.fileExists(atPath: url.path) {
+            let bak = url.deletingPathExtension().appendingPathExtension("BAK")
+            try? fm.removeItem(at: bak)
+            try? fm.copyItem(at: url, to: bak)
+        }
+        do {
+            try doc.text().write(to: url, atomically: true, encoding: .utf8)
+            savedRevision = doc.revision
+            message = "Saved \(url.lastPathComponent)"
+            refresh()
+            return true
+        } catch {
+            message = "Save failed: \(error.localizedDescription)"
+            refresh()
+            return false
+        }
+    }
+
+    /// Returns true if it's safe to proceed (discard current changes).
+    private func confirmDiscardIfNeeded() -> Bool {
+        guard isDirty else { return true }
+        let alert = NSAlert()
+        alert.messageText = "Save changes to \(fileName)?"
+        alert.informativeText = "Your changes will be lost if you don't save them."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Don't Save")
+        alert.addButton(withTitle: "Cancel")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:  return saveDocument()
+        case .alertSecondButtonReturn: return true
+        default:                       return false
+        }
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        confirmDiscardIfNeeded()
     }
 
     // MARK: - Menu actions (native keys mirroring WordStar commands)
 
+    @objc func wsNew(_ sender: Any?)      { newDocument() }
+    @objc func wsOpen(_ sender: Any?)     { openDocument() }
+    @objc func wsSave(_ sender: Any?)     { saveDocument() }
+    @objc func wsSaveAs(_ sender: Any?)   { saveDocumentAs() }
     @objc func wsUndo(_ sender: Any?)     { doc.undo(); refresh() }
     @objc func wsRedo(_ sender: Any?)     { doc.redo(); refresh() }
     @objc func wsFind(_ sender: Any?)     { startPrompt(.find) }

@@ -22,6 +22,8 @@ print("Command / block / find / undo tests…")
 runCommandTests()
 print("Formatting / dot-command tests…")
 runFormattingTests()
+print("File I/O round-trip tests…")
+runIOTests()
 
 if failures == 0 {
     print("\nAll tests passed ✓")

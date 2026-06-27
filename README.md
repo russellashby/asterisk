@@ -22,6 +22,10 @@ Native Edit menu mirrors the commands.
 traits + highlighted markers), dot-command lines (dimmed), `^B` reform, help
 levels 0–3 (`^J`), and amber/green/classic phosphor themes.
 
+**Phase 5 (done):** file I/O — New/Open/Save/Save As (File menu + `^KS`/`^KR`),
+lossless native format (text + control bytes + dot lines), `.BAK` backups,
+dirty-state title and unsaved-changes prompt on close.
+
 ### Try it
 
 ```sh
@@ -52,13 +56,18 @@ open WordStar.app
 | **Quick** find · replace · to block · del-to-eol | `^QF` · `^QA` · `^QB`/`^QK` · `^QY` |
 | **Print** (`^P`) bold · underline · italic | `^PB` · `^PS` · `^PY` |
 | Reform paragraph · cycle help level | `^B` · `^J` |
+| **File** (`^K`) save · read/open | `^KS` · `^KR` |
+| Native menu: New/Open/Save/Save As | `⌘N` `⌘O` `⌘S` `⌘⇧S` |
 | Native menu: Undo/Redo/Find/Replace | `⌘Z` `⌘⇧Z` `⌘F` `⌘G` `⌘R` |
 | Quit | `⌘Q` |
 
-## Roadmap
+## Roadmap / backlog
 
-4b. Dynamic dot-command margins (`.lm`/`.rm`) and pagination (`.pa`/`.pl`).
-5. Native-format file I/O, `.BAK` backups, palette switching, native menu mirroring.
+- **4b** — dynamic dot-command margins (`.lm`/`.rm`) and pagination (`.pa`/`.pl`).
+- System clipboard (`⌘C`/`⌘X`/`⌘V`).
+- CP437 bitmap font + CRT polish (glow/scanlines).
+- Palette switching UI + fuller native menu mirroring.
+- Remaining commands: `^QE`/`^QX`, `^O` onscreen menu, `^P` print/PDF pipeline.
 
 ## Layout
 
