@@ -6,6 +6,14 @@ text input. (Repository name: `WordStarMac`; the shipped app is **Asterisk**.)
 
 Swift + AppKit, custom `NSView` cell-grid renderer (no Electron, no TextKit).
 
+[![Download latest release](https://img.shields.io/github/v/release/russellashby/asterisk?label=Download&logo=apple&color=orange)](https://github.com/russellashby/asterisk/releases/latest)
+&nbsp;[![CI](https://github.com/russellashby/asterisk/actions/workflows/ci.yml/badge.svg)](https://github.com/russellashby/asterisk/actions/workflows/ci.yml)
+&nbsp;[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+**[⬇︎ Download the latest release](https://github.com/russellashby/asterisk/releases/latest)** —
+a ready-to-run macOS app (unsigned; first launch needs **right-click → Open**, see
+[Install](#install)). Or build from source below.
+
 > **Name & trademarks.** Asterisk is an independent, clean-room tribute. It is
 > not affiliated with, endorsed by, or derived from the source code of any owner
 > of the "WordStar" trademark; that name is used here only to describe the
