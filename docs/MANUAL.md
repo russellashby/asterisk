@@ -273,7 +273,7 @@ These complement the WordStar keys; they are standard Mac shortcuts.
 | Edit ▸ Cut / Copy / Paste | `⌘X` / `⌘C` / `⌘V` | **System clipboard** (Copy/Cut act on the marked block; Paste inserts at the cursor) |
 | Edit ▸ Find / Find Next / Replace | `⌘F` / `⌘G` / `⌘R` | Same as `^QF` / `^L` / `^QA` |
 | File ▸ New / Open / Save / Save As | `⌘N` / `⌘O` / `⌘S` / `⌘⇧S` | |
-| View ▸ Scanlines / Glow | — | Toggle the CRT scan‑line and phosphor‑glow effects |
+| View ▸ Scanlines / Glow | — | Toggle the CRT scan‑line and phosphor‑glow effects (both off by default) |
 
 The pasteboard Copy/Cut use the **block** (mark it first with `^KB`/`^KK`); paste
 normalises line endings and preserves embedded format bytes.

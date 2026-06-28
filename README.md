@@ -31,8 +31,9 @@ rules. Dotless documents keep the fast incremental layout (no pagination).
 lossless native format (text + control bytes + dot lines), `.BAK` backups,
 dirty-state title and unsaved-changes prompt on close.
 
-**CRT effects:** subtle scanlines + phosphor glow, both toggleable from the
-**View** menu (no screen curvature). Pairs nicely with the amber theme.
+**CRT effects:** subtle scanlines + phosphor glow, **off by default**, both
+toggleable from the **View** menu (no screen curvature). Pair nicely with the
+amber theme.
 
 **Clipboard:** `⌘C`/`⌘X` copy/cut the marked block to the system pasteboard,
 `⌘V` pastes at the cursor (line-endings normalized, format bytes preserved).

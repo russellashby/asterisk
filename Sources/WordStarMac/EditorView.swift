@@ -32,8 +32,8 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
     private var isDirty: Bool { doc.revision != savedRevision }
 
     // MARK: CRT effects (toggleable; no screen curvature, kept subtle)
-    private var scanlinesOn = true
-    private var glowOn = true
+    private var scanlinesOn = false
+    private var glowOn = false
 
     // MARK: Command FSM / prompt
     private enum InputState { case normal, awaitBlock, awaitQuick, awaitPrint }
