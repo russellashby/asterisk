@@ -75,6 +75,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let viewItem = NSMenuItem()
         mainMenu.addItem(viewItem)
         let viewMenu = NSMenu(title: "View")
+        addItem(viewMenu, "Zoom In", #selector(EditorView.wsZoomIn(_:)), "+")
+        addItem(viewMenu, "Zoom Out", #selector(EditorView.wsZoomOut(_:)), "-")
+        addItem(viewMenu, "Actual Size", #selector(EditorView.wsActualSize(_:)), "0")
+        viewMenu.addItem(.separator())
         addItem(viewMenu, "CRT Scanlines", #selector(EditorView.wsToggleScanlines(_:)), "")
         addItem(viewMenu, "CRT Phosphor Glow", #selector(EditorView.wsToggleGlow(_:)), "")
         viewItem.submenu = viewMenu

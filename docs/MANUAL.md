@@ -291,6 +291,7 @@ These complement the WordStar keys; they are standard Mac shortcuts.
 | Edit ▸ Cut / Copy / Paste | `⌘X` / `⌘C` / `⌘V` | **System clipboard** (Copy/Cut act on the marked block; Paste inserts at the cursor) |
 | Edit ▸ Find / Find Next / Replace | `⌘F` / `⌘G` / `⌘R` | Same as `^QF` / `^L` / `^QA` |
 | File ▸ New / Open / Save / Save As | `⌘N` / `⌘O` / `⌘S` / `⌘⇧S` | |
+| View ▸ Zoom In / Zoom Out / Actual Size | `⌘+` / `⌘-` / `⌘0` | Grow/shrink the font; the window resizes to keep all 80 columns. Default size is the most zoomed‑out level |
 | View ▸ Scanlines / Glow | — | Toggle the CRT scan‑line and phosphor‑glow effects (both off by default) |
 
 The pasteboard Copy/Cut use the **block** (mark it first with `^KB`/`^KK`); paste

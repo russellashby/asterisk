@@ -12,12 +12,19 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
     private let statusRow = 0
 
     // MARK: Fonts (regular + style variants for inline formatting)
-    private let font: NSFont
-    private let boldFont: NSFont
-    private let italicFont: NSFont
-    private let boldItalicFont: NSFont
-    private let cellW: CGFloat
-    private let cellH: CGFloat
+    // Mutable so View ▸ Zoom can rebuild them at a new point size.
+    private var font: NSFont
+    private var boldFont: NSFont
+    private var italicFont: NSFont
+    private var boldItalicFont: NSFont
+    private var cellW: CGFloat
+    private var cellH: CGFloat
+
+    // MARK: Zoom (font size). The base size is the most zoomed-out level.
+    private static let baseFontSize: CGFloat = 14
+    private static let maxFontSize: CGFloat = 28
+    private static let fontStep: CGFloat = 2
+    private var fontSize: CGFloat = EditorView.baseFontSize
 
     // MARK: State
     private let grid: CellGrid
@@ -66,17 +73,10 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
     // MARK: - Init
 
     override init(frame frameRect: NSRect) {
-        let base = NSFont(name: "Menlo", size: 14)
-            ?? NSFont.monospacedSystemFont(ofSize: 14, weight: .regular)
-        let fm = NSFontManager.shared
-        self.font = base
-        self.boldFont = fm.convert(base, toHaveTrait: .boldFontMask)
-        self.italicFont = fm.convert(base, toHaveTrait: .italicFontMask)
-        self.boldItalicFont = fm.convert(fm.convert(base, toHaveTrait: .boldFontMask),
-                                         toHaveTrait: .italicFontMask)
-        let probe = ("M" as NSString).size(withAttributes: [.font: base])
-        self.cellW = ceil(probe.width)
-        self.cellH = ceil(base.ascender - base.descender + base.leading)
+        let f = EditorView.makeFonts(size: EditorView.baseFontSize)
+        self.font = f.font; self.boldFont = f.bold
+        self.italicFont = f.italic; self.boldItalicFont = f.boldItalic
+        self.cellW = f.cellW; self.cellH = f.cellH
         self.grid = CellGrid(cols: 80, rows: 25)
         super.init(frame: frameRect)
         wantsLayer = true
@@ -87,6 +87,20 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// Monospace font set + cell metrics for a given point size.
+    private static func makeFonts(size: CGFloat)
+        -> (font: NSFont, bold: NSFont, italic: NSFont, boldItalic: NSFont, cellW: CGFloat, cellH: CGFloat) {
+        let base = NSFont(name: "Menlo", size: size)
+            ?? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+        let fm = NSFontManager.shared
+        let bold = fm.convert(base, toHaveTrait: .boldFontMask)
+        let italic = fm.convert(base, toHaveTrait: .italicFontMask)
+        let boldItalic = fm.convert(bold, toHaveTrait: .italicFontMask)
+        let probe = ("M" as NSString).size(withAttributes: [.font: base])
+        return (base, bold, italic, boldItalic,
+                ceil(probe.width), ceil(base.ascender - base.descender + base.leading))
+    }
 
     var preferredContentWidth: CGFloat { cellW * CGFloat(textColumns) + 24 }
 
@@ -121,6 +135,56 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
         updateCursorPosition(invalidateOld: false)
         needsDisplay = true
     }
+
+    // MARK: - Zoom (font size)
+
+    /// Rebuild the fonts/cell metrics at `requested` pt (clamped to the zoom
+    /// range), grow/shrink the window to keep all 80 columns visible, and
+    /// re-render. The base size is the most zoomed-out level.
+    private func applyFontSize(_ requested: CGFloat) {
+        let clamped = min(max(requested, EditorView.baseFontSize), EditorView.maxFontSize)
+        guard clamped != fontSize else { return }
+        let rowsToKeep = grid.rows
+        fontSize = clamped
+        let f = EditorView.makeFonts(size: clamped)
+        font = f.font; boldFont = f.bold; italicFont = f.italic; boldItalicFont = f.boldItalic
+        cellW = f.cellW; cellH = f.cellH
+        resizeWindowToGrid(rows: rowsToKeep)   // may trigger setFrameSize → re-render
+        computeGeometry()                      // ensure re-render even if size unchanged
+        clampScroll()
+        renderGrid()
+        updateCursorPosition(invalidateOld: false)
+        needsDisplay = true
+    }
+
+    /// Resize the window so the 80-column grid fits at the current cell size,
+    /// keeping `rows` visible (terminal-style). Clamped to the screen; the
+    /// visual top-left corner stays put.
+    ///
+    /// In full screen (or when maximized) the window can't/shouldn't change size —
+    /// resizing there would pin a smaller content view into a corner and the grid
+    /// would drift off-centre. We skip the resize and let `computeGeometry`
+    /// re-centre the grid within the existing bounds.
+    private func resizeWindowToGrid(rows: Int) {
+        guard let window = window else { return }
+        if window.styleMask.contains(.fullScreen) || window.isZoomed { return }
+        let topLeft = NSPoint(x: window.frame.minX, y: window.frame.maxY)
+        var contentW = cellW * CGFloat(textColumns) + 24
+        var contentH = CGFloat(rows) * cellH
+        if let screen = window.screen ?? NSScreen.main {
+            let vis = screen.visibleFrame
+            let chromeH = window.frame.height - window.contentLayoutRect.height
+            contentW = min(contentW, vis.width)
+            contentH = min(contentH, vis.height - chromeH)
+        }
+        window.minSize = NSSize(width: preferredContentWidth, height: 320)
+        window.setContentSize(NSSize(width: contentW, height: contentH))
+        window.setFrameTopLeftPoint(topLeft)
+    }
+
+    @objc func wsZoomIn(_ sender: Any?)     { applyFontSize(fontSize + EditorView.fontStep) }
+    @objc func wsZoomOut(_ sender: Any?)    { applyFontSize(fontSize - EditorView.fontStep) }
+    @objc func wsActualSize(_ sender: Any?) { applyFontSize(EditorView.baseFontSize) }
 
     private func clampScroll() {
         let line = doc.cursorLine
@@ -777,6 +841,9 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
             return doc.blockRange != nil
         case #selector(wsPaste(_:)):
             return NSPasteboard.general.string(forType: .string) != nil
+        case #selector(wsZoomIn(_:)):     return fontSize < EditorView.maxFontSize
+        case #selector(wsZoomOut(_:)):    return fontSize > EditorView.baseFontSize
+        case #selector(wsActualSize(_:)): return fontSize != EditorView.baseFontSize
         default: break
         }
         return true

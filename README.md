@@ -65,6 +65,7 @@ open Asterisk.app
 | Native menu: New/Open/Save/Save As | `⌘N` `⌘O` `⌘S` `⌘⇧S` |
 | Native menu: Undo/Redo · Cut/Copy/Paste | `⌘Z` `⌘⇧Z` · `⌘X` `⌘C` `⌘V` |
 | Native menu: Find/Find-next/Replace | `⌘F` `⌘G` `⌘R` |
+| Native menu: Zoom in / out / actual size | `⌘+` `⌘-` `⌘0` |
 | Quit | `⌘Q` |
 
 ## Roadmap / backlog
