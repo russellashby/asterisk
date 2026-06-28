@@ -11,43 +11,7 @@ Swift + AppKit, custom `NSView` cell-grid renderer (no Electron, no TextKit).
 > of the "WordStar" trademark; that name is used here only to describe the
 > historical software this project pays homage to.
 
-## Status
-
-**Phase 1 (done):** latency-critical foundation — custom layer-backed `NSView`
-owning every keystroke, 80-column letter-boxed grid, per-cell diffing, status
-line, ruler, blinking block cursor.
-
-**Phase 2 (done):** piece-table edit buffer, incremental word-wrap layout, full
-cursor motion, insert/overtype. AppKit-free core (`WSCore`) with unit tests.
-
-**Phase 3 (done):** `^K`/`^Q` prefix command system, block ops (mark/copy/move/
-delete with on-screen highlight), find & find/replace, multi-level undo/redo.
-Native Edit menu mirrors the commands.
-
-**Phase 4 (done):** inline bold/underline/italic (`^P`, rendered with real font
-traits + highlighted markers), dot-command lines (dimmed), `^B` reform, help
-levels 0–3 (`^J`), and amber/green/classic phosphor themes.
-
-**Phase 4b (done):** dot commands now *take effect* — `.lm`/`.rm` reflow and
-indent following text (region-based, multiple regions supported), and
-`.pa`/`.pl`/`.mt`/`.mb` drive page breaks shown as on-screen `Page N` divider
-rules. Dotless documents keep the fast incremental layout (no pagination).
-
-**Justification (done):** the `^O` onscreen menu with `^OJ` toggles full
-justification (flush left + right), on by default like WordStar 4. Render-time
-only (padding isn't saved); the final line of a paragraph stays ragged. Tab
-(`^I`) indents to 5-column tab stops.
-
-**Phase 5 (done):** file I/O — New/Open/Save/Save As (File menu + `^KS`/`^KR`),
-lossless native format (text + control bytes + dot lines), `.BAK` backups,
-dirty-state title and unsaved-changes prompt on close.
-
-**CRT effects:** subtle scanlines + phosphor glow, **off by default**, both
-toggleable from the **View** menu (no screen curvature). Pair nicely with the
-amber theme.
-
-**Clipboard:** `⌘C`/`⌘X` copy/cut the marked block to the system pasteboard,
-`⌘V` pastes at the cursor (line-endings normalized, format bytes preserved).
+![Asterisk — text-mode word processor on macOS](screenshot.png)
 
 ## Install
 
