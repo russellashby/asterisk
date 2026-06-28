@@ -4,6 +4,7 @@
 Package.resolved
 
 # Built app bundle (regenerate with ./bundle.sh)
+Asterisk.app/
 WordStar.app/
 
 # macOS

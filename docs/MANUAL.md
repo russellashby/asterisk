@@ -1,9 +1,9 @@
-# WordStarMac — Instruction Manual
+# Asterisk — Instruction Manual
 
-A native macOS word processor modelled on **DOS WordStar 4.0**: an 80‑column
-text‑mode grid, modal control‑key commands, and dot commands for margins and
-pagination. This manual describes **what the program actually does today** (it is
-written from the source, not from the original WordStar manual), so where our
+**Asterisk** is a native macOS word processor modelled on **DOS WordStar 4.0**: an
+80‑column text‑mode grid, modal control‑key commands, and dot commands for margins
+and pagination. This manual describes **what the program actually does today** (it
+is written from the source, not from the original WordStar manual), so where our
 behaviour differs from classic WordStar that is called out.
 
 > Notation: `^K` means hold **Ctrl** and press **K**. `⌘` is the Mac Command key
@@ -25,7 +25,8 @@ behaviour differs from classic WordStar that is called out.
   and column are derived from word‑wrap layout. Word wrap happens automatically —
   you don’t press Return at the end of every line, only to end a paragraph.
 - **The status line** (top row) shows: file name · `L{line} C{column}` · INSERT
-  or OVERTYPE · `BLOCK` if a block is marked · current HELP level.
+  or OVERTYPE · `BLOCK` if a block is marked · `JUST` if justification is on ·
+  current HELP level.
   - `C{column}` is the **column within the line’s text**, counted from 1. With a
     left margin (`.lm`) in force the text is indented on screen but `C` still
     counts from the first character, so the on‑screen caret can be further right
@@ -178,6 +179,23 @@ So to bold a word: `^PB`, type the word, `^PB` again. The two `B` markers show
 inverse; the text between them renders bold using a real bold font. Styles carry
 across soft‑wrapped lines and **reset at a hard line break** (Return).
 
+### Justification — the `^O` menu
+
+The **`^O` onscreen menu** controls how text appears on screen. Today it has one
+entry:
+
+| `^O` then… | Action |
+|------------|--------|
+| `J` | **Justify on/off** — toggle full justification |
+
+With justification **on** (the default, as in WordStar 4), each line that
+word‑wraps is padded with extra spaces between words so the last word reaches the
+right margin — giving flush left **and** right edges. The final line of each
+paragraph, dot lines and blank lines stay ragged. `JUST` shows on the status line
+while it's on. Justification is **on‑screen only** — the padding is not stored, so
+saved files keep their original single spaces. Turn it off with `^OJ` for a
+ragged‑right look.
+
 ---
 
 ## 9. Dot commands — margins & pagination
@@ -290,7 +308,7 @@ normalises line endings and preserves embedded format bytes.
 ^G del→    ^H del←    ^T del-word ^Y del-line
 ^B reform  ^V ins/over ^U undo   ^L find-next  ^J help-level
 ^I tab/indent (or the Tab key)
-^K block menu   ^Q quick menu   ^P print menu
+^K block menu   ^Q quick menu   ^P print menu   ^O onscreen menu
 ```
 
 **`^K` block / file** `B`/`K` mark · `C` copy · `V` move · `Y` delete · `H` hide
@@ -300,6 +318,8 @@ normalises line endings and preserves embedded format bytes.
 · `Y` del‑to‑eol · `F` find · `A` replace
 
 **`^P` print** `B` bold · `S` underline · `Y` italic
+
+**`^O` onscreen** `J` justify on/off
 
 **Dot commands** `.lm` `.rm` margins · `.pa` `.pl` `.mt` `.mb` pagination
 

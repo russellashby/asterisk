@@ -86,11 +86,16 @@ with `-enable-testing` so the runner can `@testable import` internals.
    text (region-based, multi-region); `.pa`/`.pl`/`.mt`/`.mb` drive page breaks
    shown as on-screen `Page N` divider rules. Gated on `dotCount > 0` so the
    common dotless document keeps the fast incremental layout (no pagination).
+
+4c. **DONE** — `^O` onscreen menu with `^OJ` full justification (on by default,
+   WS4-style). Render-time only: each `VisualLine` stores its wrap `width` and
+   `Document.justifiedColumns(_:)` maps char→column for both renderer and cursor;
+   toggling needs no relayout. Tab (`^I`) indents to 5-column stops.
 5. **DONE** — File I/O: New/Open/Save/Save As (File menu + `^KS`/`^KR`), native
    format = raw text with control bytes + dot lines (lossless round-trip),
    `.BAK` backups, revision-based dirty tracking, window title + close prompt.
    **Remaining backlog (see task list / below):** CP437 font + CRT polish,
-   palette switching, ^O onscreen menu, ^P print/PDF pipeline.
+   palette switching, more ^O options (center, line spacing), ^P print/PDF.
 
 ## Active plans
 

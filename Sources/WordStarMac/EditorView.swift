@@ -36,7 +36,7 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
     private var glowOn = false
 
     // MARK: Command FSM / prompt
-    private enum InputState { case normal, awaitBlock, awaitQuick, awaitPrint }
+    private enum InputState { case normal, awaitBlock, awaitQuick, awaitPrint, awaitOnscreen }
     private enum Prompt { case find, replaceSearch, replaceWith(String) }
     private var inputState: InputState = .normal
     private var prompt: Prompt?
@@ -163,7 +163,8 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
         let pos = "L\(doc.cursorLine + 1) C\(doc.cursorColumn + 1)"
         let mode = doc.insertMode ? "INSERT" : "OVERTYPE"
         let blk = doc.blockRange != nil ? "  BLOCK" : ""
-        writeRow(statusRow, "  \(fileName)    \(pos)    \(mode)\(blk)    HELP \(helpLevel)",
+        let just = doc.justify ? "  JUST" : ""
+        writeRow(statusRow, "  \(fileName)    \(pos)    \(mode)\(blk)\(just)    HELP \(helpLevel)",
                  role: .status)
     }
 
@@ -188,7 +189,7 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
             return [
                 "  <<<  M A I N   M E N U  >>>          press ^J to change help level",
                 "Cursor           Scroll       Delete          Misc          Menus",
-                "^E up   ^X down   ^R pg-up     ^G char         ^V ins/over   ^K Block",
+                "^E up   ^X down   ^R pg-up     ^G char         ^V ins/over   ^K Block ^O Onscr",
                 "^S/^D ^A/^F word  ^C pg-down   ^T word ^Y line ^B reform     ^Q Quick ^P Print",
             ]
         }
@@ -251,32 +252,41 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
             // edge (so the diff repaints/clears it when the break moves) plus a
             // right-aligned "Page N" label written into the grid.
             let isBreak = doc.pageBreakBeforeLine.contains(lineIndex)
+            // Justified lines map each character to a (possibly widened) column;
+            // nil means ragged, i.e. the identity mapping col == char index.
+            let cols = doc.justifiedColumns(lineIndex)
+
+            // Blank the row first, then place characters at their columns so the
+            // widened word-gaps of a justified line read as blanks.
+            for c in 0..<grid.cols { setCell(gridRow, c, Cell(ch: " ", role: .text, pageBreakTop: isBreak)) }
+
             var attrs = doc.lineEntryAttrs(lineIndex)
-            for c in 0..<grid.cols {
-                let ci = c - indent   // index into the line's characters
-                guard ci >= 0, ci < chars.count else {
-                    setCell(gridRow, c, Cell(ch: " ", role: .text, pageBreakTop: isBreak)); continue
-                }
+            for ci in 0..<chars.count {
                 let ch = chars[ci]
-                let off = lineStart + ci
-                let inBlock = block.map { off >= $0.lowerBound && off < $0.upperBound } ?? false
+                let screenCol = indent + (cols?[ci] ?? ci)
+                let drawable = screenCol >= 0 && screenCol < grid.cols
 
                 if let f = formatToggled(by: ch) {
-                    // Show the control byte as a highlighted marker letter.
-                    var cell = Cell(ch: formatMarkerLetter(ch) ?? "?", role: .text)
-                    cell.inverse = true
-                    cell.pageBreakTop = isBreak
-                    setCell(gridRow, c, cell)
+                    if drawable {
+                        // Show the control byte as a highlighted marker letter.
+                        var cell = Cell(ch: formatMarkerLetter(ch) ?? "?", role: .text)
+                        cell.inverse = true
+                        cell.pageBreakTop = isBreak
+                        setCell(gridRow, screenCol, cell)
+                    }
                     attrs.toggle(f)
-                } else {
-                    var cell = Cell(ch: ch, role: .text)
-                    cell.bold = attrs.bold
-                    cell.underline = attrs.underline
-                    cell.italic = attrs.italic
-                    cell.inverse = inBlock
-                    cell.pageBreakTop = isBreak
-                    setCell(gridRow, c, cell)
+                    continue
                 }
+                guard drawable else { continue }
+                let off = lineStart + ci
+                let inBlock = block.map { off >= $0.lowerBound && off < $0.upperBound } ?? false
+                var cell = Cell(ch: ch, role: .text)
+                cell.bold = attrs.bold
+                cell.underline = attrs.underline
+                cell.italic = attrs.italic
+                cell.inverse = inBlock
+                cell.pageBreakTop = isBreak
+                setCell(gridRow, screenCol, cell)
             }
 
             if isBreak {
@@ -306,7 +316,10 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
         } else {
             gridCursorRow = firstTextRow + (doc.cursorLine - scrollTop)
             let indent = doc.lineLeftIndent(doc.cursorLine)
-            gridCursorCol = min(indent + doc.cursorColumn, grid.cols - 1)
+            let cc = doc.cursorColumn
+            // Map through justification so the caret tracks the widened columns.
+            let col = doc.justifiedColumns(doc.cursorLine).flatMap { cc < $0.count ? $0[cc] : nil } ?? cc
+            gridCursorCol = min(indent + col, grid.cols - 1)
         }
         cursorOn = true
         restartBlink()
@@ -432,6 +445,7 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
         case .awaitBlock: completeBlockPrefix(event); return
         case .awaitQuick: completePrefix(event, resolveQuickCommand); return
         case .awaitPrint: completePrint(event); return
+        case .awaitOnscreen: completeOnscreen(event); return
         case .normal: break
         }
 
@@ -461,6 +475,7 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
         case "k": inputState = .awaitBlock; message = "^K  B/K mark  C copy  V move  Y delete  H hide  |  S save  R read  D done"
         case "q": inputState = .awaitQuick; message = "^Q  S/D line  R/C doc  B/K block  F find  A replace  Y del-eol"
         case "p": inputState = .awaitPrint; message = "^P  B bold  S underline  Y italic"
+        case "o": inputState = .awaitOnscreen; message = "^O  J justify on/off"
         case "e": doc.moveUp()
         case "x": doc.moveDown()
         case "s": doc.moveLeft()
@@ -524,6 +539,20 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
         case "b": doc.insertFormat(.bold)
         case "s": doc.insertFormat(.underline)
         case "y": doc.insertFormat(.italic)
+        default: break
+        }
+        refresh()
+    }
+
+    /// ^O onscreen menu — currently just justification on/off (^OJ).
+    private func completeOnscreen(_ event: NSEvent) {
+        inputState = .normal
+        message = nil
+        if event.keyCode == 53 { refresh(); return }   // Esc
+        switch event.charactersIgnoringModifiers?.lowercased() {
+        case "j":
+            doc.toggleJustify()
+            message = doc.justify ? "Justify on" : "Justify off"
         default: break
         }
         refresh()
@@ -623,7 +652,7 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
 
     private func updateTitle() {
         fileName = (filePath?.lastPathComponent ?? "UNTITLED.WS")
-        window?.title = (isDirty ? "• " : "") + "WordStar — " + fileName
+        window?.title = (isDirty ? "• " : "") + "Asterisk — " + fileName
     }
 
     private func newDocument() {

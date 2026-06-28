@@ -15,6 +15,9 @@ struct VisualLine: Equatable {
     var entry: TextAttrs = TextAttrs()
     var isDot: Bool = false
     var leftIndent: Int = 0
+    /// The wrap-region width (columns) this line was laid out to. Used to
+    /// distribute spaces when full justification is on (see `justifiedColumns`).
+    var width: Int = 0
 }
 
 /// The editable document: a piece-table buffer plus a word-wrap layout cache, a
@@ -42,6 +45,12 @@ public final class Document {
         didSet { if wrapWidth < 1 { wrapWidth = 1 }; forceFullRelayout() }
     }
     public var insertMode = true
+
+    /// Full justification (`^OJ`). On = soft-wrapped lines are padded to the
+    /// right margin; off = ragged right. Purely a render-time mapping derived
+    /// from each line's `width`, so toggling needs no relayout. Default on,
+    /// matching WordStar 4.
+    public var justify = true
 
     private(set) public var cursor = 0      // offset 0...count
     private var preferredColumn = 0
@@ -114,6 +123,55 @@ public final class Document {
 
     /// On-screen left indent (0-based) of a visual line from an active `.lm`.
     public func lineLeftIndent(_ index: Int) -> Int { lines[index].leftIndent }
+
+    /// Screen columns (relative to the line's left indent) for each character
+    /// boundary of visual line `i` when full justification applies, or nil if it
+    /// renders ragged (justify off, last line of a paragraph, a dot/empty line,
+    /// a single word, or an already-full line). The array has `contentLen + 1`
+    /// entries; element k is the column of character index k (k == contentLen is
+    /// the line-end column). Both the renderer and the cursor use this so they
+    /// stay aligned on justified lines.
+    public func justifiedColumns(_ i: Int) -> [Int]? {
+        guard justify, i >= 0, i < lines.count else { return nil }
+        let line = lines[i]
+        guard !line.isDot, line.width > 0 else { return nil }
+        // Only soft-wrapped lines are justified — the next line must continue the
+        // same paragraph (no '\n' gap). The paragraph's final line stays ragged.
+        guard i + 1 < lines.count, lines[i + 1].start == line.end else { return nil }
+        let contentLen = line.end - line.start
+        guard contentLen > 1 else { return nil }
+        let chars = pt.slice(line.start..<line.end)
+
+        var m = contentLen                         // trimmed length (no trailing spaces)
+        while m > 0, chars[m - 1] == " " { m -= 1 }
+        guard m > 0, line.width > m else { return nil }
+
+        // Ends of interior whitespace runs — the gaps we widen.
+        var gapEnds: [Int] = []
+        var t = 0
+        while t < m {
+            if chars[t] == " " {
+                var u = t
+                while u + 1 < m, chars[u + 1] == " " { u += 1 }
+                gapEnds.append(u)
+                t = u + 1
+            } else { t += 1 }
+        }
+        let g = gapEnds.count
+        guard g > 0 else { return nil }            // single word — cannot justify
+
+        let extra = line.width - m
+        var cols = [Int](repeating: 0, count: contentLen + 1)
+        var acc = 0, gp = 0
+        for k in 0...contentLen {
+            cols[k] = k + acc
+            if gp < g, k == gapEnds[gp] {           // widen the gap after its last space
+                acc += extra / g + (gp < extra % g ? 1 : 0)
+                gp += 1
+            }
+        }
+        return cols
+    }
 
     public var blockRange: Range<Int>? {
         guard let b = blockBegin, let e = blockEnd else { return nil }
@@ -222,6 +280,9 @@ public final class Document {
     /// ^B — reform (re-wrap) the current paragraph. With layout-time wrapping the
     /// text is always reflowed, so this just normalises the layout.
     public func reformParagraph() { endTyping(); forceFullRelayout() }
+
+    /// `^OJ` — toggle full justification. Render-time only; no relayout needed.
+    public func toggleJustify() { endTyping(); justify.toggle() }
 
     /// ^QY — delete from the cursor to the end of the logical line.
     public func deleteToLineEnd() {
@@ -551,7 +612,8 @@ public final class Document {
             if j < n {
                 segStart = j + 1
                 if segStart == n {   // text ends with '\n' → trailing empty line
-                    emitText(VisualLine(start: n, end: n, leftIndent: lm - 1))
+                    emitText(VisualLine(start: n, end: n, leftIndent: lm - 1,
+                                        width: max(1, rm - (lm - 1))))
                     break
                 }
             } else {
@@ -583,7 +645,7 @@ public final class Document {
             if j < n {
                 segStart = j + 1
                 if segStart == n {   // text ends with '\n' → trailing empty line
-                    result.append(VisualLine(start: a + n, end: a + n))
+                    result.append(VisualLine(start: a + n, end: a + n, width: wrapWidth))
                     break
                 }
             } else {
@@ -632,12 +694,12 @@ public final class Document {
             if lineLen > width {
                 if lastBreak > curStart {
                     result.append(VisualLine(start: curStart, end: lastBreak,
-                                             entry: lineEntry, leftIndent: leftIndent))
+                                             entry: lineEntry, leftIndent: leftIndent, width: width))
                     curStart = lastBreak
                     lineEntry = attrsAtBreak
                 } else {
                     result.append(VisualLine(start: curStart, end: absP,
-                                             entry: lineEntry, leftIndent: leftIndent))
+                                             entry: lineEntry, leftIndent: leftIndent, width: width))
                     curStart = absP
                     lineEntry = attrs
                 }
@@ -650,7 +712,7 @@ public final class Document {
             p += 1
         }
         result.append(VisualLine(start: curStart, end: absLE,
-                                 entry: lineEntry, leftIndent: leftIndent))
+                                 entry: lineEntry, leftIndent: leftIndent, width: width))
     }
 
     /// Incremental relayout: re-wrap only the paragraph span touched by an edit

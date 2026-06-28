@@ -11,7 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered,
                           defer: false)
-        window.title = "WordStar — UNTITLED.WS"
+        window.title = "Asterisk — UNTITLED.WS"
 
         let editor = EditorView(frame: frame)
         window.contentView = editor
@@ -34,9 +34,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appItem = NSMenuItem()
         mainMenu.addItem(appItem)
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "About WordStar", action: nil, keyEquivalent: "")
+        appMenu.addItem(withTitle: "About Asterisk", action: nil, keyEquivalent: "")
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "Quit WordStar",
+        appMenu.addItem(withTitle: "Quit Asterisk",
                         action: #selector(NSApplication.terminate(_:)),
                         keyEquivalent: "q")
         appItem.submenu = appMenu

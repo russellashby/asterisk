@@ -24,6 +24,8 @@ print("Formatting / dot-command tests…")
 runFormattingTests()
 print("Margin / pagination tests…")
 runMarginTests()
+print("Justification tests…")
+runJustifyTests()
 print("File I/O round-trip tests…")
 runIOTests()
 
