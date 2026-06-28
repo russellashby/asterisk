@@ -78,6 +78,7 @@ behaviour differs from classic WordStar that is called out.
 | Action | Keys |
 |--------|------|
 | Insert a new line / split paragraph | Return |
+| **Indent** to the next tab stop | Tab (or `^I`) |
 | Delete char **before** cursor (backspace) | `^H` or Delete |
 | Delete char **under** cursor (forward) | `^G` or Fn‑Delete |
 | Delete the **word** to the right | `^T` |
@@ -87,6 +88,11 @@ behaviour differs from classic WordStar that is called out.
 
 Because wrapping is automatic, `^B` (reform) mostly just normalises the layout;
 text is always reflowed to the current margins as you type.
+
+**Tab / indent.** Tab (or `^I`) indents to the next tab stop — every **5
+columns**, the same stops marked with `!` on the ruler. Tabs are stored as plain
+spaces, so they word-wrap, save and round-trip like ordinary text; remove an
+indent with Backspace.
 
 ### Insert vs. Overtype
 
@@ -283,6 +289,7 @@ normalises line endings and preserves embedded format bytes.
 ^A word←   ^F word→   ^R pg-up   ^C pg-down
 ^G del→    ^H del←    ^T del-word ^Y del-line
 ^B reform  ^V ins/over ^U undo   ^L find-next  ^J help-level
+^I tab/indent (or the Tab key)
 ^K block menu   ^Q quick menu   ^P print menu
 ```
 

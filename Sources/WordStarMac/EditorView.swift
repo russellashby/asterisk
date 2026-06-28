@@ -440,6 +440,7 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
 
         switch event.keyCode {
         case 36, 76:  doc.insertNewline()
+        case 48:      doc.insertTab()
         case 51:      doc.backspace()
         case 117:     doc.deleteForward()
         case 123:     doc.moveLeft()
@@ -477,6 +478,7 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
         case "u": doc.undo()
         case "l": runFindNext()
         case "j": cycleHelpLevel()
+        case "i": doc.insertTab()
         default: break
         }
         refresh()

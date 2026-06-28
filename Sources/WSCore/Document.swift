@@ -180,6 +180,20 @@ public final class Document {
         syncPreferredColumn()
     }
 
+    /// Column interval between tab stops (matches the ruler's tab markers).
+    public static let tabWidth = 5
+
+    /// Tab (`^I`) — indent by inserting spaces up to the next tab stop. Stored as
+    /// plain spaces so wrapping, saving and cursor maths need no special-casing;
+    /// coalesced into the current typing run for undo, like ordinary characters.
+    public func insertTab() {
+        if !typingRun { pushUndo(); typingRun = true }
+        let span = Document.tabWidth - (cursorColumn % Document.tabWidth)
+        rawInsert(Array(repeating: " ", count: span), at: cursor)
+        cursor += span
+        syncPreferredColumn()
+    }
+
     public func backspace() {
         guard cursor > 0 else { return }
         endTyping(); pushUndo()

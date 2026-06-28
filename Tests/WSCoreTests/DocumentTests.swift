@@ -81,6 +81,19 @@ func runDocumentTests() {
         doc.wordLeft();  eq(doc.cursorColumn, 4, "wordLeft back to quick")
     }
 
+    // Tab indents to the next tab stop (stored as spaces)
+    do {
+        let doc = Document(wrapWidth: 65)
+        doc.insertTab()
+        eq(doc.cursorColumn, 5, "tab from col 0 → next stop 5")
+        eq(doc.text(), "     ", "tab inserts spaces")
+        for ch in "x" { doc.insertChar(ch) }   // col 6
+        doc.insertTab()
+        eq(doc.cursorColumn, 10, "tab from col 6 → next stop 10")
+        doc.insertTab()
+        eq(doc.cursorColumn, 15, "tab from a tab stop advances a full stop")
+    }
+
     // Incremental layout must equal full layout under random edits
     do {
         var rng = SystemRandomNumberGenerator()
