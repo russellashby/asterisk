@@ -33,5 +33,13 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
+# Ad-hoc code-sign the whole bundle. The Swift linker already ad-hoc signs the
+# inner arm64 binary, but without a sealed bundle (_CodeSignature/CodeResources)
+# Gatekeeper reports a quarantined download as "damaged". Ad-hoc signing fixes
+# that — it does NOT remove the unsigned/unnotarized first-launch prompt (use
+# right-click → Open, or strip the quarantine flag with xattr).
+codesign --force --deep --sign - "$APP"
+codesign --verify --strict --verbose=2 "$APP" && echo "ad-hoc signature OK"
+
 echo "Built $APP"
 echo "Run with:  open $APP    (or ./$APP/Contents/MacOS/Asterisk)"
