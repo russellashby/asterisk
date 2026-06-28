@@ -4,9 +4,16 @@ Guidance for Claude Code when working in this repository.
 
 ## What this is
 
-WordStarMac — a native macOS word processor inspired by **DOS WordStar 4.0**.
-Goal: authentic text-mode experience with WordStar control-key commands and
-**blindly fast text input**.
+A native macOS word processor inspired by **DOS WordStar 4.0**. Goal: authentic
+text-mode experience with WordStar control-key commands and **blindly fast text
+input**.
+
+**Naming (important — three different names):** the shipped app is **Asterisk**;
+the public GitHub repo is **`russellashby/asterisk`** (public, MIT); but the local
+folder and the SwiftPM executable target are still **`WordStarMac`** (renaming the
+target was deliberately skipped). So you build/run with `swift run WordStarMac`
+even though the app users see is Asterisk. Only user-visible strings (window
+title, About/Quit menus, `bundle.sh`) say "Asterisk".
 
 ## Non-negotiable design constraints
 
@@ -56,9 +63,9 @@ target `WSCoreTests` is an XCTest-free test runner (CLT has no XCTest).
 
 ```sh
 swift build              # compile
-swift run WordStarMac    # build + launch the app
+swift run WordStarMac    # build + launch the app (target name is WordStarMac)
 swift run WSCoreTests    # run the core unit tests (exits non-zero on failure)
-./bundle.sh              # produce double-clickable WordStar.app
+./bundle.sh              # produce + ad-hoc-sign double-clickable Asterisk.app
 ```
 
 Requires Command Line Tools (no full Xcode). Swift 6.x; the package pins
@@ -68,6 +75,25 @@ AppKit main-thread code — keep it that way unless intentionally migrating.
 **Testing note:** XCTest is unavailable under CLT-only, so tests are a plain
 executable (`Tests/WSCoreTests`) using a tiny assert harness. WSCore is built
 with `-enable-testing` so the runner can `@testable import` internals.
+
+## Distribution / releases
+
+Open-sourced (MIT) at `github.com/russellashby/asterisk`. GitHub Actions CI
+(`.github/workflows/ci.yml`) runs build + `WSCoreTests` + `./bundle.sh` on macOS.
+
+To cut a release (latest is **v0.2**):
+1. Bump `CFBundleVersion` / `CFBundleShortVersionString` in `bundle.sh`.
+2. `./bundle.sh` → builds + **ad-hoc code-signs** `Asterisk.app`.
+3. `ditto -c -k --keepParent Asterisk.app Asterisk-vX.Y-macos.zip` (use `ditto`,
+   not `zip`, so the code signature survives the round-trip).
+4. `gh release create vX.Y Asterisk-vX.Y-macos.zip --title … --notes-file …`.
+
+The build is **unsigned/unnotarized** (no Apple Developer ID). `bundle.sh` ad-hoc
+signs the *bundle* (`codesign --force --deep --sign -`) — this is required: without
+it the Swift linker signs only the inner arm64 binary, leaving the bundle without
+`_CodeSignature/CodeResources`, and a quarantined download is reported as
+**"damaged"** on Apple Silicon. Ad-hoc signing downgrades that to the normal
+"unidentified developer" prompt (right-click → Open). Release zips are gitignored.
 
 ## Roadmap (phased; build + verify each before the next)
 
@@ -94,19 +120,43 @@ with `-enable-testing` so the runner can `@testable import` internals.
 5. **DONE** — File I/O: New/Open/Save/Save As (File menu + `^KS`/`^KR`), native
    format = raw text with control bytes + dot lines (lossless round-trip),
    `.BAK` backups, revision-based dirty tracking, window title + close prompt.
-   **Remaining backlog (see task list / below):** CP437 font + CRT polish,
-   palette switching, more ^O options (center, line spacing), ^P print/PDF.
+   **Remaining backlog:** CP437 font, palette switching UI, more ^O options
+   (center, line spacing), ^P print/PDF pipeline, Apple Developer ID
+   signing+notarization (to drop the Gatekeeper prompt).
+
+**Also done (unnumbered, since phase 5):** system clipboard (`⌘C`/`⌘X`/`⌘V`),
+CRT scanlines + glow (View menu, **off by default**), Tab/`^I` indent to 5-col
+stops, `^OJ` justification (4c), **View ▸ Zoom** (`⌘+`/`⌘-`/`⌘0`) — scales the
+font and resizes the window terminal-style to keep 80 cols (skipped in full
+screen / `isZoomed`, where the grid just re-centres).
 
 ## Active plans
 
 - None open. Phase 4b (dot-command margins + pagination) is **done** — see
   [`docs/PHASE_4B_PLAN.md`](docs/PHASE_4B_PLAN.md) for the design rationale.
+- User-facing key reference + behaviour lives in [`docs/MANUAL.md`](docs/MANUAL.md);
+  keep it in sync when commands change.
 
 ## Conventions
 
 - Keep the hot path (keystroke → mutate → diff → draw) allocation-free; no global
   relayout per keystroke. Layout is incremental (per-paragraph) — preserve that;
   `Document.relayout` must stay equivalent to `forceFullRelayout` (fuzz-tested).
+- **Layout fuzz invariant (bites easily):** the incremental path (`relayout` →
+  `wrapParagraphs`/`appendLogicalLine`) must produce byte-identical `lines` to
+  `forceFullRelayout` for dotless docs (asserted by the fuzz tests). Any new
+  per-`VisualLine` field must be set **identically in both paths**, including the
+  dot, empty, and **trailing-empty** line cases — a mismatch there (e.g. `width`
+  defaulting to 0 in one path) silently breaks the invariant. Docs with dot
+  commands always go through `forceFullRelayout` (gated on `dotCount > 0`).
+- **On-screen decorations must live in the `Cell` model** so the diff renderer
+  clears them when they move. The page-break rule + `Page N` label are driven by
+  `Cell.pageBreakTop` / grid cells; an earlier version drew them as a `draw()`
+  overlay and left stale artifacts on partial repaints.
+- **Justification is render-time only** (`Document.justifiedColumns`, from
+  `VisualLine.width`); it never mutates the buffer, so saves stay lossless and
+  toggling `^OJ` needs no relayout. Renderer *and* cursor must use the same
+  mapping or the caret drifts on justified lines.
 - The view derives everything from `Document` (cursor offset → line/col via the
   layout cache). Don't duplicate text state in the view.
 - Match the surrounding code style (clear MARK sections, role-based colours).
