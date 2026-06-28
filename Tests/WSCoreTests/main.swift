@@ -22,6 +22,8 @@ print("Command / block / find / undo tests…")
 runCommandTests()
 print("Formatting / dot-command tests…")
 runFormattingTests()
+print("Margin / pagination tests…")
+runMarginTests()
 print("File I/O round-trip tests…")
 runIOTests()
 

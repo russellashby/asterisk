@@ -22,6 +22,11 @@ Native Edit menu mirrors the commands.
 traits + highlighted markers), dot-command lines (dimmed), `^B` reform, help
 levels 0–3 (`^J`), and amber/green/classic phosphor themes.
 
+**Phase 4b (done):** dot commands now *take effect* — `.lm`/`.rm` reflow and
+indent following text (region-based, multiple regions supported), and
+`.pa`/`.pl`/`.mt`/`.mb` drive page breaks shown as on-screen `Page N` divider
+rules. Dotless documents keep the fast incremental layout (no pagination).
+
 **Phase 5 (done):** file I/O — New/Open/Save/Save As (File menu + `^KS`/`^KR`),
 lossless native format (text + control bytes + dot lines), `.BAK` backups,
 dirty-state title and unsaved-changes prompt on close.
@@ -61,6 +66,7 @@ open WordStar.app
 | **Quick** (`^Q`) line start/end · doc top/bottom | `^QS`/`^QD` · `^QR`/`^QC` |
 | **Quick** find · replace · to block · del-to-eol | `^QF` · `^QA` · `^QB`/`^QK` · `^QY` |
 | **Print** (`^P`) bold · underline · italic | `^PB` · `^PS` · `^PY` |
+| **Dot commands** margins · page breaks | `.lm`/`.rm` · `.pa`/`.pl`/`.mt`/`.mb` |
 | Reform paragraph · cycle help level | `^B` · `^J` |
 | **File** (`^K`) save · read/open | `^KS` · `^KR` |
 | Native menu: New/Open/Save/Save As | `⌘N` `⌘O` `⌘S` `⌘⇧S` |
@@ -70,7 +76,6 @@ open WordStar.app
 
 ## Roadmap / backlog
 
-- **4b** — dynamic dot-command margins (`.lm`/`.rm`) and pagination (`.pa`/`.pl`).
 - CP437 bitmap font (DOS glyphs). _(CRT glow/scanlines done — View menu.)_
 - Palette switching UI + fuller native menu mirroring.
 - Remaining commands: `^QE`/`^QX`, `^O` onscreen menu, `^P` print/PDF pipeline.

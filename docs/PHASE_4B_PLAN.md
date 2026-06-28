@@ -1,7 +1,11 @@
 # Phase 4b plan — dynamic dot-command margins + pagination
 
-Status: **not started** (task #2). Dot-command lines are already *recognised and
-displayed dimmed* (Phase 4); this phase makes them *take effect*.
+Status: **DONE** (task #2). Dot-command lines were already *recognised and
+displayed dimmed* (Phase 4); this phase makes them *take effect*. Implemented in
+`DotCommands.swift` (parsing), `Document.swift` (margin/pagination-aware
+`forceFullRelayout`, `dotCount` gating, `pageBreakBeforeLine`) and
+`EditorView.swift` (leftIndent rendering + `Page N` divider rules), with
+`Tests/WSCoreTests/MarginTests.swift` covering margins and pagination.
 
 Read this top-to-bottom before coding. It's written to be implementable cold.
 

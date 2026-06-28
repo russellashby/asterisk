@@ -246,17 +246,26 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
                 continue
             }
 
+            let indent = doc.lineLeftIndent(lineIndex)
+            // A line that begins a new page carries a divider on every cell's top
+            // edge (so the diff repaints/clears it when the break moves) plus a
+            // right-aligned "Page N" label written into the grid.
+            let isBreak = doc.pageBreakBeforeLine.contains(lineIndex)
             var attrs = doc.lineEntryAttrs(lineIndex)
             for c in 0..<grid.cols {
-                guard c < chars.count else { setCell(gridRow, c, Cell(ch: " ", role: .text)); continue }
-                let ch = chars[c]
-                let off = lineStart + c
+                let ci = c - indent   // index into the line's characters
+                guard ci >= 0, ci < chars.count else {
+                    setCell(gridRow, c, Cell(ch: " ", role: .text, pageBreakTop: isBreak)); continue
+                }
+                let ch = chars[ci]
+                let off = lineStart + ci
                 let inBlock = block.map { off >= $0.lowerBound && off < $0.upperBound } ?? false
 
                 if let f = formatToggled(by: ch) {
                     // Show the control byte as a highlighted marker letter.
                     var cell = Cell(ch: formatMarkerLetter(ch) ?? "?", role: .text)
                     cell.inverse = true
+                    cell.pageBreakTop = isBreak
                     setCell(gridRow, c, cell)
                     attrs.toggle(f)
                 } else {
@@ -265,10 +274,26 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
                     cell.underline = attrs.underline
                     cell.italic = attrs.italic
                     cell.inverse = inBlock
+                    cell.pageBreakTop = isBreak
                     setCell(gridRow, c, cell)
                 }
             }
+
+            if isBreak {
+                let label = Array("Page \(pageNumber(forBreakLine: lineIndex))")
+                let start = max(indent + chars.count + 1, grid.cols - label.count)
+                for (i, ch) in label.enumerated() where start + i < grid.cols {
+                    setCell(gridRow, start + i, Cell(ch: ch, role: .ruler, pageBreakTop: true))
+                }
+            }
         }
+    }
+
+    /// Page number that begins at a page-break line (page 1 is the first page).
+    private func pageNumber(forBreakLine lineIndex: Int) -> Int {
+        var n = 1
+        for b in doc.pageBreakBeforeLine where b <= lineIndex { n += 1 }
+        return n
     }
 
     // MARK: - Cursor
@@ -280,7 +305,8 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
             gridCursorCol = promptCaretCol
         } else {
             gridCursorRow = firstTextRow + (doc.cursorLine - scrollTop)
-            gridCursorCol = min(doc.cursorColumn, grid.cols - 1)
+            let indent = doc.lineLeftIndent(doc.cursorLine)
+            gridCursorCol = min(indent + doc.cursorColumn, grid.cols - 1)
         }
         cursorOn = true
         restartBlink()
@@ -366,6 +392,15 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
                 (String(cell.ch) as NSString).draw(at: CGPoint(x: rect.minX, y: rect.minY),
                                                    withAttributes: attrs)
             }
+        }
+
+        // Page-boundary rule: a thin line along the top edge of a new page's
+        // first row. Driven by the cell's own `pageBreakTop` flag so it's part
+        // of the diff — drawn inside this cell's rect (never clipped) and cleared
+        // automatically when the break moves. Segments tile into a full rule.
+        if cell.pageBreakTop {
+            theme.rulerFG.withAlphaComponent(0.7).setFill()
+            NSRect(x: rect.minX, y: rect.minY, width: rect.width, height: 1).fill()
         }
     }
 

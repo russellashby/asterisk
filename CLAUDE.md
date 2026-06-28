@@ -44,6 +44,7 @@ target `WSCoreTests` is an XCTest-free test runner (CLT has no XCTest).
 | `Sources/WSCore/Document.swift`   | Cursor, editing, word-wrap layout, blocks, find/replace, undo |
 | `Sources/WSCore/Commands.swift`   | `EditorCommand` + ^K/^Q key→command resolution |
 | `Sources/WSCore/Formatting.swift` | Inline format attrs + control-byte mapping |
+| `Sources/WSCore/DotCommands.swift` | Dot-command parsing (`.lm`/`.rm`/`.pa`/`.pl`/`.mt`/`.mb`) + layout defaults |
 | `Sources/WordStarMac/main.swift`  | NSApplication entry point                    |
 | `Sources/WordStarMac/AppDelegate.swift` | Window + native menu setup            |
 | `Sources/WordStarMac/EditorView.swift`  | Input, geometry, render-to-grid, drawing |
@@ -80,18 +81,21 @@ with `-enable-testing` so the runner can `@testable import` internals.
 4. **DONE** — Inline formatting (`^P` bold/underline/italic, rendered with real
    font traits + highlighted markers), dot-command lines (recognised + dimmed),
    `^B` reform, help levels 0–3 (`^J`). Amber/green/classic phosphor themes.
-   **Deferred to 4b:** dynamic `.lm`/`.rm` margin effects and `.pa`/`.pl`
-   pagination (dot lines display but don't yet reflow/paginate).
+
+4b. **DONE** — Dot commands take effect: `.lm`/`.rm` reflow & indent following
+   text (region-based, multi-region); `.pa`/`.pl`/`.mt`/`.mb` drive page breaks
+   shown as on-screen `Page N` divider rules. Gated on `dotCount > 0` so the
+   common dotless document keeps the fast incremental layout (no pagination).
 5. **DONE** — File I/O: New/Open/Save/Save As (File menu + `^KS`/`^KR`), native
    format = raw text with control bytes + dot lines (lossless round-trip),
    `.BAK` backups, revision-based dirty tracking, window title + close prompt.
-   **Remaining backlog (see task list / below):** 4b margins+pagination, system
-   clipboard, CP437 font + CRT polish, palette switching, ^O/^P/print pipeline.
+   **Remaining backlog (see task list / below):** CP437 font + CRT polish,
+   palette switching, ^O onscreen menu, ^P print/PDF pipeline.
 
 ## Active plans
 
-- **Phase 4b (dot-command margins + pagination)** — detailed, implement-cold plan
-  in [`docs/PHASE_4B_PLAN.md`](docs/PHASE_4B_PLAN.md). Start there for that work.
+- None open. Phase 4b (dot-command margins + pagination) is **done** — see
+  [`docs/PHASE_4B_PLAN.md`](docs/PHASE_4B_PLAN.md) for the design rationale.
 
 ## Conventions
 

@@ -17,6 +17,9 @@ struct Cell: Equatable {
     var underline = false
     var italic = false
     var inverse = false
+    /// Draw a page-boundary rule along this cell's top edge. Part of the cell so
+    /// the diff repaints (and clears) the divider when a page break moves.
+    var pageBreakTop = false
 }
 
 /// A 2D grid of character cells — the "screen" in classic text-mode terms.

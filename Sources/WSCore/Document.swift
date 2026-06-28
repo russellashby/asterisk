@@ -7,11 +7,14 @@ import Foundation
 /// `entry` is the format-attribute state in effect at the line's first column
 /// (attributes carry across soft-wrapped lines but reset at each hard newline).
 /// `isDot` marks a WordStar dot-command line (starts with '.' in column 1).
+/// `leftIndent` is the on-screen indent (0-based) from an active `.lm` margin;
+/// dot lines and the no-dot fast path always carry 0.
 struct VisualLine: Equatable {
     var start: Int
     var end: Int
     var entry: TextAttrs = TextAttrs()
     var isDot: Bool = false
+    var leftIndent: Int = 0
 }
 
 /// The editable document: a piece-table buffer plus a word-wrap layout cache, a
@@ -24,6 +27,16 @@ public final class Document {
 
     private let pt: PieceTable
     private(set) var lines: [VisualLine] = [VisualLine(start: 0, end: 0)]
+
+    /// Number of dot-command lines in the layout. While > 0 the (margin- and
+    /// pagination-aware) full relayout is used, since region effects depend on
+    /// the whole document prefix; at 0 the fast incremental path applies.
+    private var dotCount = 0
+
+    /// Visual-line indices before which an automatic/forced page boundary falls
+    /// (sorted, display-only — never entries in `lines`). Empty when the
+    /// document uses no dot commands.
+    private(set) public var pageBreakBeforeLine: [Int] = []
 
     public var wrapWidth: Int {
         didSet { if wrapWidth < 1 { wrapWidth = 1 }; forceFullRelayout() }
@@ -98,6 +111,9 @@ public final class Document {
 
     /// Whether a visual line is a WordStar dot-command line.
     public func lineIsDot(_ index: Int) -> Bool { lines[index].isDot }
+
+    /// On-screen left indent (0-based) of a visual line from an active `.lm`.
+    public func lineLeftIndent(_ index: Int) -> Int { lines[index].leftIndent }
 
     public var blockRange: Range<Int>? {
         guard let b = blockBegin, let e = blockEnd else { return nil }
@@ -461,9 +477,78 @@ public final class Document {
 
     // MARK: - Layout (word wrap)
 
+    /// Full, margin- and pagination-aware relayout. Scans the whole document in
+    /// order tracking the active `.lm`/`.rm` wrap region and the `.pl`/`.mt`/`.mb`
+    /// page model, emitting dot lines whole and word-wrapping text within the
+    /// current region. Used whenever the document contains dot commands (and on
+    /// undo/redo, reform and wrap-width changes); equivalent to the fast
+    /// incremental path when there are none.
     func forceFullRelayout() {
-        lines = wrapParagraphs(0, count)
-        if lines.isEmpty { lines = [VisualLine(start: 0, end: 0)] }
+        let chars = pt.slice(0..<count)
+        let n = chars.count
+        var result: [VisualLine] = []
+        var breaks: [Int] = []
+
+        // Active region (1-based columns) and page model.
+        var lm = 1
+        var rm = wrapWidth
+        var pl = kDefaultPageLength
+        var mt = kDefaultMarginTop
+        var mb = kDefaultMarginBottom
+        var linesThisPage = 0
+        var pendingBreak = false
+
+        // Emit one text visual line, accounting for page boundaries first.
+        func emitText(_ vl: VisualLine) {
+            let cap = max(1, pl - mt - mb)
+            if pendingBreak || linesThisPage >= cap {
+                breaks.append(result.count)
+                linesThisPage = 0
+                pendingBreak = false
+            }
+            result.append(vl)
+            linesThisPage += 1
+        }
+
+        var segStart = 0
+        while segStart <= n {
+            var j = segStart
+            while j < n, chars[j] != "\n" { j += 1 }
+
+            if j > segStart, chars[segStart] == "." {
+                // Dot line: emitted whole (indent 0), not counted toward the page.
+                result.append(VisualLine(start: segStart, end: j, entry: TextAttrs(), isDot: true))
+                if let dir = parseDot(chars[segStart..<j]) {
+                    if dir.pa { pendingBreak = true }
+                    if let v = dir.lm, v >= 1, v < rm { lm = v }
+                    if let v = dir.rm { let nrm = min(v, kMaxColumns); if nrm > lm { rm = nrm } }
+                    if let v = dir.pl, v >= 1 { pl = v }
+                    if let v = dir.mt, v >= 0 { mt = v }
+                    if let v = dir.mb, v >= 0 { mb = v }
+                }
+            } else {
+                let width = max(1, rm - (lm - 1))
+                var produced: [VisualLine] = []
+                wrapTextLine(chars: chars, baseA: 0, ls: segStart, le: j,
+                             width: width, leftIndent: lm - 1, into: &produced)
+                for vl in produced { emitText(vl) }
+            }
+
+            if j < n {
+                segStart = j + 1
+                if segStart == n {   // text ends with '\n' → trailing empty line
+                    emitText(VisualLine(start: n, end: n, leftIndent: lm - 1))
+                    break
+                }
+            } else {
+                break
+            }
+        }
+
+        lines = result.isEmpty ? [VisualLine(start: 0, end: 0)] : result
+        dotCount = 0
+        for vl in lines where vl.isDot { dotCount += 1 }
+        pageBreakBeforeLine = dotCount > 0 ? breaks : []
         if cursor > count { cursor = count }
     }
 
@@ -498,16 +583,28 @@ public final class Document {
 
     /// Wrap one logical line `[ls, le)` (indices into `chars`, absolute offset =
     /// baseA + index), appending its visual lines. Dot-command lines are emitted
-    /// whole; otherwise greedy word-wrap, recording each line's entry attributes.
+    /// whole; otherwise word-wrap at the default region (used by the no-dot
+    /// incremental path, so `leftIndent` is 0 and width is `wrapWidth`).
     private func appendLogicalLine(chars: [Character], baseA: Int, ls: Int, le: Int,
                                    into result: inout [VisualLine]) {
-        let absLS = baseA + ls
-        let absLE = baseA + le
-
         if le > ls, chars[ls] == "." {
-            result.append(VisualLine(start: absLS, end: absLE, entry: TextAttrs(), isDot: true))
+            result.append(VisualLine(start: baseA + ls, end: baseA + le,
+                                     entry: TextAttrs(), isDot: true))
             return
         }
+        wrapTextLine(chars: chars, baseA: baseA, ls: ls, le: le,
+                     width: wrapWidth, leftIndent: 0, into: &result)
+    }
+
+    /// Greedily word-wrap a non-dot logical line `[ls, le)` at `width`, tagging
+    /// each produced visual line with `leftIndent` and recording the inline
+    /// format attributes in effect at its first column. Shared by both the
+    /// region-aware full relayout and the default incremental path.
+    private func wrapTextLine(chars: [Character], baseA: Int, ls: Int, le: Int,
+                              width: Int, leftIndent: Int,
+                              into result: inout [VisualLine]) {
+        let absLS = baseA + ls
+        let absLE = baseA + le
 
         var curStart = absLS
         var lineEntry = TextAttrs()   // attrs at curStart
@@ -518,13 +615,15 @@ public final class Document {
         while p < le {
             let absP = baseA + p
             let lineLen = absP - curStart + 1
-            if lineLen > wrapWidth {
+            if lineLen > width {
                 if lastBreak > curStart {
-                    result.append(VisualLine(start: curStart, end: lastBreak, entry: lineEntry))
+                    result.append(VisualLine(start: curStart, end: lastBreak,
+                                             entry: lineEntry, leftIndent: leftIndent))
                     curStart = lastBreak
                     lineEntry = attrsAtBreak
                 } else {
-                    result.append(VisualLine(start: curStart, end: absP, entry: lineEntry))
+                    result.append(VisualLine(start: curStart, end: absP,
+                                             entry: lineEntry, leftIndent: leftIndent))
                     curStart = absP
                     lineEntry = attrs
                 }
@@ -536,7 +635,8 @@ public final class Document {
             if ch == " " { lastBreak = absP + 1; attrsAtBreak = attrs }
             p += 1
         }
-        result.append(VisualLine(start: curStart, end: absLE, entry: lineEntry))
+        result.append(VisualLine(start: curStart, end: absLE,
+                                 entry: lineEntry, leftIndent: leftIndent))
     }
 
     /// Incremental relayout: re-wrap only the paragraph span touched by an edit
@@ -554,6 +654,17 @@ public final class Document {
         while paraEnd < newCount, pt.char(at: paraEnd) != "\n" { paraEnd += 1 }
 
         let mid = wrapParagraphs(paraStart, paraEnd)
+
+        // Region margins & pagination depend on the whole document prefix, which
+        // this per-paragraph path can't see. If the document uses dot commands —
+        // or this edit just introduced one (or removed the last one) — fall back
+        // to the margin/pagination-aware full relayout, which also resets
+        // `dotCount`/`pageBreakBeforeLine` exactly.
+        if dotCount > 0 || mid.contains(where: { $0.isDot }) {
+            forceFullRelayout()
+            return
+        }
+
         let paraEndOld = paraEnd - delta
 
         var prefix: [VisualLine] = []
@@ -576,5 +687,6 @@ public final class Document {
 
         lines = prefix + mid + suffix
         if lines.isEmpty { lines = [VisualLine(start: 0, end: 0)] }
+        pageBreakBeforeLine = []
     }
 }
