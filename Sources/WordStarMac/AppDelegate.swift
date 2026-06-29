@@ -11,7 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered,
                           defer: false)
-        window.title = "Asterisk — UNTITLED.WS"
+        window.title = "Asterisk — UNTITLED.txt"
 
         let editor = EditorView(frame: frame)
         window.contentView = editor

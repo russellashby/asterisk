@@ -29,8 +29,10 @@ These were settled with the user up front. Do not relitigate without asking:
 - **WordStar key bindings.** Modal control-key command system (the diamond,
   `^K` block, `^Q` quick, `^O` onscreen, `^P` print). We own `keyDown:` so all
   Ctrl combos are ours. Native Mac menus mirror commands and show the WS shortcut.
-- **File compatibility scope: UX only.** Save/open plain text + our own native
-  format. Not parsing/writing genuine WordStar `.ws` binary files.
+- **File compatibility scope: UX only.** Save/open **plain text (`.txt`)** — our
+  on-disk format is raw text with embedded control bytes + dot lines. Not
+  parsing/writing genuine WordStar `.ws` binary files; `.WS` is no longer used as
+  a default extension (the saved bytes were never real WordStar files).
 - **Formatting scope: on-screen.** Dot commands, margins, bold/underline/italic
   markers, reformat. No print/PDF pipeline yet.
 
@@ -117,9 +119,10 @@ it the Swift linker signs only the inner arm64 binary, leaving the bundle withou
    WS4-style). Render-time only: each `VisualLine` stores its wrap `width` and
    `Document.justifiedColumns(_:)` maps char→column for both renderer and cursor;
    toggling needs no relayout. Tab (`^I`) indents to 5-column stops.
-5. **DONE** — File I/O: New/Open/Save/Save As (File menu + `^KS`/`^KR`), native
-   format = raw text with control bytes + dot lines (lossless round-trip),
-   `.BAK` backups, revision-based dirty tracking, window title + close prompt.
+5. **DONE** — File I/O: New/Open/Save/Save As (File menu + `^KS`/`^KR`), saves as
+   plain text (`.txt`, save panel constrained to `.plainText`) — raw text with
+   control bytes + dot lines (lossless round-trip), `.BAK` backups, revision-based
+   dirty tracking, window title + close prompt.
    **Remaining backlog:** CP437 font, palette switching UI, more ^O options
    (center, line spacing), ^P print/PDF pipeline, Apple Developer ID
    signing+notarization (to drop the Gatekeeper prompt).

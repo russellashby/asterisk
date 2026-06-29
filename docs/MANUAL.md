@@ -43,9 +43,9 @@ behaviour differs from classic WordStar that is called out.
 | Save | `^KS` (also `^KD`, `^KX`) | **File ▸ Save** (`⌘S`) |
 | Save As | — | **File ▸ Save As** (`⌘⇧S`) |
 
-- Saving writes **plain text with our control bytes and dot lines intact**, so a
-  document round‑trips losslessly. A `.BAK` backup of the previous version is
-  written next to the file on each save.
+- Saving writes **plain text (`.txt`) with our control bytes and dot lines
+  intact**, so a document round‑trips losslessly. A `.BAK` backup of the previous
+  version is written next to the file on each save.
 - The window title shows a `•` and a bullet when there are unsaved changes;
   closing with unsaved changes prompts you to Save / Don’t Save / Cancel.
 - `^KD` and `^KX` (“done”/“exit” in WordStar) currently just **save** — they do

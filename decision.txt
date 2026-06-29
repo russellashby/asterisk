@@ -1,0 +1,55 @@
+DECISION: How Asterisk handles formatting on save
+==================================================
+Status: OPEN (deferred — revisit later)
+Date raised: 2026-06-29
+
+CONTEXT
+-------
+Saves now default to plain text (.txt); the .WS default was dropped because
+we never wrote real WordStar binary files. But formatting IS a real feature
+(bold/underline/italic via ^P, plus dot-command lines), so it lives in the
+document and a save has to do something with it.
+
+Today's behaviour: LOSSLESS. We write the raw control bytes straight into
+the file:
+  bold      -> 0x02 (^B)
+  underline -> 0x13 (^S)
+  italic    -> 0x19 (^Y)
+  dot lines -> literal text (e.g. ".lm 5")
+Round-trips perfectly in Asterisk. The catch: a .txt opened in another
+editor shows the occasional invisible control character. (Historically this
+is exactly what real WordStar document files were, so it's authentic.)
+
+THE CHOICE
+----------
+1. Lossless text (STATUS QUO)
+   - .txt carries control bytes + dot lines.
+   - Pro: lossless, authentic to WordStar, already shipping.
+   - Con: outside editors show stray invisibles.
+
+2. Clean text only
+   - Strip formatting on save.
+   - Pro: fully portable plain text.
+   - Con: bold/underline/italic lost on reload -> demotes the app to a
+     plain-text editor. (Recommended AGAINST.)
+
+3. Native + export split
+   - Keep lossless save as the working format; add a separate
+     Export -> Markdown / clean text for sharing
+     (^B -> **bold**, translate/strip dot commands, etc.).
+   - Pro: best of both.
+   - Con: real conversion layer to build; Markdown has no native underline,
+     so small lossy compromises on export.
+
+CURRENT LEANING
+---------------
+Keep #1 as the default save (lossless, authentic, done). Treat clean/Markdown
+output as a future EXPORT action rather than overloading Save. Avoid #2.
+
+OPEN SUB-QUESTIONS (if/when we do #3)
+------------------------------------
+- Export targets: Markdown only, or also a "clean .txt" (control bytes stripped)?
+- How to represent underline in Markdown (no native syntax) — HTML <u>, skip,
+  or a configurable marker?
+- Dot commands on export: drop them, or translate (.lm/.rm -> indentation, etc.)?
+- UI: new "File -> Export…" menu item + format picker.

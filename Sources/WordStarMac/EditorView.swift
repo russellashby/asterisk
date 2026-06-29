@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 import WSCore
 
 /// The editing canvas: a custom layer-backed NSView that owns every keystroke,
@@ -30,7 +31,7 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
     private let grid: CellGrid
     private var doc = Document(wrapWidth: 65)
     private var scrollTop = 0
-    private var fileName = "UNTITLED.WS"
+    private var fileName = "UNTITLED.txt"
     private var helpLevel = 3      // 0 = no menu … 3 = full WordStar main menu
 
     // MARK: File
@@ -715,7 +716,7 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
     }
 
     private func updateTitle() {
-        fileName = (filePath?.lastPathComponent ?? "UNTITLED.WS")
+        fileName = (filePath?.lastPathComponent ?? "UNTITLED.txt")
         window?.title = (isDirty ? "• " : "") + "Asterisk — " + fileName
     }
 
@@ -754,7 +755,8 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
     @discardableResult
     private func saveDocumentAs() -> Bool {
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = filePath?.lastPathComponent ?? "UNTITLED.WS"
+        panel.allowedContentTypes = [.plainText]
+        panel.nameFieldStringValue = filePath?.lastPathComponent ?? "UNTITLED.txt"
         guard panel.runModal() == .OK, let url = panel.url else { return false }
         filePath = url
         return write(to: url)
