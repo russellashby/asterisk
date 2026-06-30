@@ -31,7 +31,7 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
     private let grid: CellGrid
     private var doc = Document(wrapWidth: 65)
     private var scrollTop = 0
-    private var fileName = "UNTITLED.txt"
+    private var fileName = "UNTITLED.asterisk"
     private var helpLevel = 3      // 0 = no menu … 3 = full WordStar main menu
 
     // MARK: File
@@ -716,7 +716,7 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
     }
 
     private func updateTitle() {
-        fileName = (filePath?.lastPathComponent ?? "UNTITLED.txt")
+        fileName = (filePath?.lastPathComponent ?? "UNTITLED.asterisk")
         window?.title = (isDirty ? "• " : "") + "Asterisk — " + fileName
     }
 
@@ -755,8 +755,12 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
     @discardableResult
     private func saveDocumentAs() -> Bool {
         let panel = NSSavePanel()
-        panel.allowedContentTypes = [.plainText]
-        panel.nameFieldStringValue = filePath?.lastPathComponent ?? "UNTITLED.txt"
+        // Asterisk's own document format — presentation (control bytes + dot
+        // lines) is saved into the document. Plain-text/Markdown export later.
+        if let asteriskType = UTType(filenameExtension: "asterisk") {
+            panel.allowedContentTypes = [asteriskType]
+        }
+        panel.nameFieldStringValue = filePath?.lastPathComponent ?? "UNTITLED.asterisk"
         guard panel.runModal() == .OK, let url = panel.url else { return false }
         filePath = url
         return write(to: url)

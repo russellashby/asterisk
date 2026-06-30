@@ -1,7 +1,22 @@
 DECISION: How Asterisk handles formatting on save
 ==================================================
-Status: OPEN (deferred — revisit later)
+Status: DECIDED 2026-06-30 — Option 3 (word processor; native .asterisk format)
 Date raised: 2026-06-29
+Updated: 2026-06-30 (reframed around the UTF-8 vs "plain text" distinction;
+                     added justification soft-spacing + content-vs-presentation;
+                     added word-processor-vs-text-editor guiding principle;
+                     added option 4 = Markdown+YAML / become a text editor)
+
+DECISION (2026-06-30)
+---------------------
+Option 3. Asterisk is a WORD PROCESSOR, so presentation is saved INTO the
+document. Native format gets its own honest identity: extension **.asterisk**
+(NOT .txt — that would claim presentation-free text-editor output; NOT .WS —
+we don't write real WordStar binary). On-disk bytes are unchanged for now (text
+with embedded control bytes + dot lines). Plain-text / Markdown EXPORT comes
+later (option 2 mechanics, as an export path — not the native save). Option 4
+(become a text editor) was considered and rejected: we're building a word
+processor. The rest of this file is retained as the rationale.
 
 CONTEXT
 -------
@@ -16,40 +31,202 @@ the file:
   underline -> 0x13 (^S)
   italic    -> 0x19 (^Y)
   dot lines -> literal text (e.g. ".lm 5")
-Round-trips perfectly in Asterisk. The catch: a .txt opened in another
-editor shows the occasional invisible control character. (Historically this
-is exactly what real WordStar document files were, so it's authentic.)
+Round-trips perfectly in Asterisk.
 
-THE CHOICE
-----------
-1. Lossless text (STATUS QUO)
-   - .txt carries control bytes + dot lines.
-   - Pro: lossless, authentic to WordStar, already shipping.
-   - Con: outside editors show stray invisibles.
+THE CORE PROBLEM: "valid UTF-8" is not the same as "plain text"
+--------------------------------------------------------------
+- Encoding-wise it IS still valid UTF-8. 0x02/0x13/0x19 are C0 control
+  characters (code points U+0002/U+0013/U+0019), each a legal single-byte
+  UTF-8 sequence. The file never fails a UTF-8 validator and .utf8 writes
+  won't error.
+- Semantically it is NOT plain text. "Plain text" means an unstyled
+  character stream with no out-of-band formatting. Using control bytes to
+  mean "bold starts here" is MARKUP — a styled format that merely happens to
+  encode in bytes that pass a UTF-8 check. The .txt extension claims
+  "unformatted text"; that claim is dishonest once ^P formatting is present.
 
-2. Clean text only
-   - Strip formatting on save.
-   - Pro: fully portable plain text.
-   - Con: bold/underline/italic lost on reload -> demotes the app to a
-     plain-text editor. (Recommended AGAINST.)
+Two refinements:
+- Dot commands (".lm 5", ".pa"...) ARE genuinely plain readable text lines —
+  they are not the problem. Only the ^B/^S/^Y control-byte toggles break the
+  "plain text" claim.
+- This is exactly WordStar's own DOCUMENT vs NON-DOCUMENT mode split:
+  document files carried embedded control codes (not clean text);
+  non-document mode existed for true plain text (source code, etc.). Our
+  current save is "document mode" wearing a .txt hat.
 
-3. Native + export split
-   - Keep lossless save as the working format; add a separate
-     Export -> Markdown / clean text for sharing
-     (^B -> **bold**, translate/strip dot commands, etc.).
-   - Pro: best of both.
-   - Con: real conversion layer to build; Markdown has no native underline,
-     so small lossy compromises on export.
+RELATED: justification soft-spacing, and content vs presentation
+----------------------------------------------------------------
+The same tension shows up from the other side with full justification (^OJ).
+
+- What WordStar did (document mode): it BAKED justification into the file.
+  Soft (program-inserted, reflowable) characters were distinguished from
+  hard (user-typed) ones by SETTING THE HIGH BIT (0x80). A justification pad
+  space was stored as 0xA0 (0x20 | 0x80) instead of a normal 0x20; word-wrap
+  line breaks were likewise "soft" returns vs a hard Enter. On ^B reform WS
+  stripped the high-bit soft spaces/returns and recomputed them. That high-bit
+  marking is why .WS files looked garbled as ASCII — an even stronger "not
+  plain text" than our control bytes (it leaves 7-bit ASCII entirely).
+  (Confident on the 0xA0 soft-space + high-bit soft/hard principle; less sure
+  of the exact byte WS used for a soft return — same high-bit scheme.)
+
+- What we do: justification is RENDER-TIME ONLY (Document.justifiedColumns from
+  VisualLine.width). The soft pad spaces never enter the buffer, so they never
+  reach disk. The file holds the logical, single-spaced words.
+
+So "soft-spacing isn't saved" is real but cuts IN OUR FAVOUR for plain-text
+honesty: our file = the actual words, no cosmetic padding (what a clean .txt
+should be); WordStar's file = the rendered block with embedded soft spaces
+(visually faithful but dirtier / non-plain). Within Asterisk nothing is
+functionally lost — justification is on by default, so reopening re-justifies
+at render. What ISN'T persisted is the ^OJ TOGGLE STATE (turn justification
+off, and reopening won't remember).
+
+This gives a clean split the format should respect:
+- DOCUMENT CONTENT (logical text, single spaces) — what we save now; ideal for
+  the .txt / export path.
+- PRESENTATION STATE (justification on/off; per-line padding) — currently not
+  persisted. WordStar baked it in via high bits; we recompute it. If we want a
+  full visual round-trip in the native styled format, persist the TOGGLE
+  (cheap — a dot-command-like flag), do NOT bake soft spaces (that's exactly
+  the WordStar approach we're deliberately rejecting).
+
+This reinforces option 3: a styled "document" format can carry presentation
+state like the ^OJ flag, while the .txt / Markdown export stays logical+clean.
+
+GUIDING PRINCIPLE: word processor vs text editor (what kind of artefact?)
+------------------------------------------------------------------------
+The right axis is the ARTEFACT produced, not the feature list ("has a bold
+button" is a bad definition). The load-bearing distinction is WHERE THE
+PRESENTATION LIVES:
+
+- Word-processor artefact = SELF-DESCRIBING. Presentation is embedded IN the
+  artefact; it is self-rendering. A TERMINAL product, read as-is by a human;
+  it looks like what it is (a letter looks like a letter). The document IS the
+  file.
+- Text-editor artefact = CONSUMER-INTERPRETED. Presentation is EXTERNAL,
+  supplied by whatever reads it. The bytes are ONLY logical content; meaning
+  beyond "these characters, this order" is imposed by a consumer. An
+  INSTRUMENTAL product — a means, not an end. (Code colouring comes from the
+  editor theme, not the file.)
+  -> sharper than "machine readable": plain text is very human-readable; the
+     point is presentation-free + consumer-interpreted.
+
+Edge case that TESTS the definition (and it survives): markup — Markdown,
+LaTeX, HTML, troff. Written in a text editor, pure plain text, yet meant to
+become a styled document. Resolved by anchoring on the artefact the tool
+DIRECTLY produces vs the eventual one:
+  - text editor produces the SOURCE (presentation-free plain text);
+  - a SEPARATE tool (Pandoc/LaTeX/browser) produces the DOCUMENT.
+  Two artefacts, two roles. The word processor's defining move is COLLAPSING
+  those steps: source and rendering fused into one self-describing artefact —
+  you don't run a renderer, the document IS the file.
+
+(Sub-axis inside "documents have style": PRESENTATION (bold/fonts/justify) vs
+STRUCTURE (heading/list/citation). Word processors bundle both and privilege
+presentation (WYSIWYG); markup privileges structure and defers presentation.)
+
+PAYOFF FOR ASTERISK
+-------------------
+By this test Asterisk is unambiguously a WORD PROCESSOR: it produces documents
+with embedded style. So embedding presentation in the artefact (^B control
+bytes, the ^OJ flag) is not the sin — it is the defining behaviour of the
+category. The only mistake was the LABEL: a .txt extension claims a
+text-editor artefact (presentation-free, consumer-interpreted) for what is
+actually a self-describing document. This is the principled backbone for
+option 3:
+  - native format = a DOCUMENT -> owns its presentation, deserves its own
+    honest identity (not .txt, not .WS);
+  - .txt / Markdown export = the DOWNGRADE: flatten the self-describing
+    document into a presentation-free source artefact for another tool.
+
+THE CHOICE (if .txt is to be an honest label, formatting can't be silently
+embedded as control bytes)
+--------------------------------------------------------------------------
+1. Strip formatting on save (clean .txt)
+   - Bold/underline/italic dropped on save; reopening loses them.
+   - Pro: genuinely plain, fully portable .txt.
+   - Con: lossy -> demotes the app to a plain-text editor. (Against.)
+
+2. Convert to a real text markup the extension advertises (e.g. Markdown)
+   - ^B -> **bold**, etc.; translate/strip dot commands; save as .md.
+   - Pro: honest, portable, human-readable.
+   - Con: real conversion layer; Markdown has no native underline, so small
+     lossy compromises; .md implies a syntax we must actually emit.
+
+3. Keep the styled format with its OWN honest identity (own extension/UTType)
+   - The styled "document" format is a real thing -> give it its own name
+     and UTType instead of masquerading as .txt. Reserve .txt as a clean
+     EXPORT (formatting stripped or converted).
+   - Pro: honest about what each file is; lossless working format preserved.
+   - Con: need to pick/own a new extension + UTType; a bit more plumbing.
+   - Note: dropping .WS was about not claiming real-WordStar-binary
+     compatibility. A styled format can still warrant its OWN extension —
+     just not one that implies WordStar binary or plain .txt.
+
+4. Markdown body + YAML frontmatter (becomes a TEXT EDITOR)
+   - Promote option 2's Markdown export to be the NATIVE/only format: inline
+     style as Markdown (**bold** etc.), document settings as YAML frontmatter.
+     The artefact is now presentation-free source -> by our own test Asterisk
+     becomes a WordStar-skinned MARKDOWN EDITOR, and the "document" is produced
+     downstream (Pandoc/browser). This is the "if I want a text editor" branch.
+   - Proven pattern: YAML frontmatter + Markdown body = Jekyll/Hugo/Obsidian/
+     Pandoc; inherits a whole rendering ecosystem for free.
+   - Pro: genuinely honest .md artefact; maximum interop; clean plain text.
+   - Con / caveats (the mapping is not as clean as it looks):
+     (a) MODEL MISMATCH. WordStar/^P is a TOGGLE STREAM (^B on / ^B off; can be
+         unbalanced; can OVERLAP, e.g. bold-on italic-on bold-off italic-off).
+         Markdown is BALANCED, NESTED spans. Overlapping styles don't round-trip
+         to clean Markdown. And UNDERLINE has no native Markdown -> HTML <u> or
+         a non-standard convention.
+     (b) DOT COMMANDS DON'T ALL FIT YAML. They split:
+         - GLOBAL settings (.pl, .mt/.mb, justify default) -> map cleanly to
+           YAML frontmatter.
+         - POSITIONAL directives (.pa break HERE; .lm/.rm are multi-region,
+           change mid-document) CANNOT live in frontmatter (global/once) ->
+           must stay INLINE as a body directive.
+       So the honest shape is: YAML for global settings + Markdown for inline
+       style + an inline directive syntax for positional dot commands.
+     (c) Target Pandoc Markdown, not CommonMark — its fenced divs / bracketed
+         spans with attributes can carry underline and positional directives
+         that vanilla Markdown can't.
+   - Clarifications that make it more attractive:
+     - STORAGE != EDITING. The fast core can keep its toggle/control-byte model
+       in memory; Markdown+YAML is just a load/save SERIALIZER. Non-invasive,
+       hot path intact.
+     - The WordStar FEEL survives either way: control keys, 80-col grid, ^P/^O/
+       dot commands, on-screen styling sit on top of either artefact model. Can
+       still render bold AS bold while saving **bold** (rich Markdown editor) —
+       or show literal **bold** source (further sub-choice).
+   - This is a PRODUCT-IDENTITY decision (text editor vs word processor), not a
+     file-format detail. Note options 3 and 4 are opposite resolutions: 3 keeps
+     it a word processor (own document format, .txt/.md as export); 4 makes it
+     a text editor (.md source IS the artefact).
 
 CURRENT LEANING
 ---------------
-Keep #1 as the default save (lossless, authentic, done). Treat clean/Markdown
-output as a future EXPORT action rather than overloading Save. Avoid #2.
+The real choice has narrowed to 3 vs 4 — both honest, opposite resolutions:
+- Option 3 = stay a WORD PROCESSOR: own document format (its own identity, not
+  .txt/.WS), with .txt/Markdown as a clean EXPORT. Lossless; richer than
+  Markdown can express.
+- Option 4 = become a TEXT EDITOR: Markdown + YAML frontmatter IS the artefact;
+  honest .md, max interop, but lossy at the edges (overlap/underline) and
+  commits the product identity.
+Avoid option 1 (lossy strip). Option 2 is effectively "do 4 only on export"
+while keeping today's format — a half-step.
+The 3-vs-4 pick is a PRODUCT-IDENTITY call (word processor vs text editor),
+which gates everything else here.
 
-OPEN SUB-QUESTIONS (if/when we do #3)
-------------------------------------
-- Export targets: Markdown only, or also a "clean .txt" (control bytes stripped)?
-- How to represent underline in Markdown (no native syntax) — HTML <u>, skip,
-  or a configurable marker?
-- Dot commands on export: drop them, or translate (.lm/.rm -> indentation, etc.)?
-- UI: new "File -> Export…" menu item + format picker.
+OPEN SUB-QUESTIONS (mostly for option 3, some shared with 2)
+-----------------------------------------------------------
+- What extension + UTType for the native styled format? (Not .WS — that
+  implies WordStar binary. Something Asterisk-owned.)
+- Should plain, formatting-free documents still save as real .txt, only
+  switching to the styled format when formatting is actually present?
+  (Mirrors WordStar non-document vs document.)
+- Presentation state: persist the ^OJ justification toggle (and any future
+  view state) in the native styled format? Do NOT bake soft spaces — store the
+  flag and recompute, unlike WordStar's high-bit soft spaces.
+- Export targets: Markdown only, clean .txt, or both?
+- Underline in Markdown (no native syntax) — HTML <u>, skip, or a marker?
+- Dot commands on export: drop them, or translate (.lm/.rm -> indentation)?
+- UI: "File -> Export…" menu + format picker; how Save chooses its format.

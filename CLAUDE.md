@@ -29,10 +29,13 @@ These were settled with the user up front. Do not relitigate without asking:
 - **WordStar key bindings.** Modal control-key command system (the diamond,
   `^K` block, `^Q` quick, `^O` onscreen, `^P` print). We own `keyDown:` so all
   Ctrl combos are ours. Native Mac menus mirror commands and show the WS shortcut.
-- **File compatibility scope: UX only.** Save/open **plain text (`.txt`)** — our
-  on-disk format is raw text with embedded control bytes + dot lines. Not
-  parsing/writing genuine WordStar `.ws` binary files; `.WS` is no longer used as
-  a default extension (the saved bytes were never real WordStar files).
+- **Asterisk is a word processor, so presentation is saved into the document.**
+  The native format is our own **`.asterisk`** — raw text with embedded control
+  bytes + dot lines (a self-describing document, not plain text). Plain-text /
+  Markdown **export** is planned but not built. Not `.txt` (a `.txt` would claim
+  presentation-free text-editor output, which this isn't), and not WordStar `.ws`
+  (we don't parse/write genuine WordStar binary files). See `decision.txt` for
+  the full rationale (word-processor-vs-text-editor framing).
 - **Formatting scope: on-screen.** Dot commands, margins, bold/underline/italic
   markers, reformat. No print/PDF pipeline yet.
 
@@ -119,10 +122,11 @@ it the Swift linker signs only the inner arm64 binary, leaving the bundle withou
    WS4-style). Render-time only: each `VisualLine` stores its wrap `width` and
    `Document.justifiedColumns(_:)` maps char→column for both renderer and cursor;
    toggling needs no relayout. Tab (`^I`) indents to 5-column stops.
-5. **DONE** — File I/O: New/Open/Save/Save As (File menu + `^KS`/`^KR`), saves as
-   plain text (`.txt`, save panel constrained to `.plainText`) — raw text with
-   control bytes + dot lines (lossless round-trip), `.BAK` backups, revision-based
-   dirty tracking, window title + close prompt.
+5. **DONE** — File I/O: New/Open/Save/Save As (File menu + `^KS`/`^KR`), saves in
+   our native **`.asterisk`** document format (save panel constrained to the
+   `asterisk` extension) — raw text with control bytes + dot lines (lossless
+   round-trip), `.BAK` backups, revision-based dirty tracking, window title +
+   close prompt. **Backlog:** plain-text / Markdown **export** (see `decision.txt`).
    **Remaining backlog:** CP437 font, palette switching UI, more ^O options
    (center, line spacing), ^P print/PDF pipeline, Apple Developer ID
    signing+notarization (to drop the Gatekeeper prompt).
