@@ -2,10 +2,32 @@ import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     var window: NSWindow!
+    private var editor: EditorView!
+
+    // Build the window before launch finishes so it exists when a file-open
+    // event arrives (double-click launch delivers `application(_:open:)`
+    // between willFinishLaunching and didFinishLaunching).
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        setupMenu()
+        setupWindow()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        setupMenu()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
 
+    /// Finder double-click / dock drop of an .asterisk document.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.last else { return }
+        setupWindow()
+        editor.openFile(at: url)
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func setupWindow() {
+        guard window == nil else { return }
         let frame = NSRect(x: 0, y: 0, width: 760, height: 560)
         window = NSWindow(contentRect: frame,
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -14,13 +36,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.title = "Asterisk — UNTITLED.asterisk"
 
         let editor = EditorView(frame: frame)
+        self.editor = editor
         window.contentView = editor
         window.minSize = NSSize(width: editor.preferredContentWidth, height: 320)
 
         window.center()
         window.makeFirstResponder(editor)
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

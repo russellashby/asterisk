@@ -735,6 +735,16 @@ final class EditorView: NSView, NSWindowDelegate, NSMenuItemValidation {
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        loadFile(at: url)
+    }
+
+    /// Open a file chosen outside the app (double-click in Finder / dock drop).
+    func openFile(at url: URL) {
+        guard confirmDiscardIfNeeded() else { return }
+        loadFile(at: url)
+    }
+
+    private func loadFile(at url: URL) {
         guard let data = try? Data(contentsOf: url) else { message = "Can't read \(url.lastPathComponent)"; refresh(); return }
         let text = String(data: data, encoding: .utf8)
             ?? String(data: data, encoding: .isoLatin1) ?? ""
